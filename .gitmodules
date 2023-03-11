@@ -1,0 +1,3 @@
+[submodule "features/WindowsMobileEmulator"]
+	path = features/WindowsMobileEmulator
+	url = https://github.com/MishaTY/WindowsMobileEmulator
