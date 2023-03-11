@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>Emulating the ARM Memory Management Unit (MMU)</title>
+<link rel="stylesheet" type="text/css"  href="emulator.css">
+</head>
+
+<body>
+<h1>Emulating the ARM Memory Management Unit (MMU)</h1>
+
+<h2>Key Registers</h2>
+  <h3>Control Register</h3>
+The Control Register (mmu.h's ControlRegister) controls whether the MMU
+is enabled or not, if alignment faults are enabled, and where the exception
+vector table is located in memory.
+  <h3>Translation Table Base</h3>
+This register (mmu.h's TranslationTableBase) contains the low 18 bits of
+the page table's address.
+  <h3>Domain Access Control</h3>
+Protection domains are not used by WinCE.  The register (mmu.h's
+DomainAccessControl) is written once during boot-up.
+  <h3>Fault Status</h3>
+The Fault Status (mmu.h's FaultStatus) is updated by the MMU to report
+information about the most recent MMU error.  It specifies whether the
+error was an alignment problem, or paging or protection problem.  The
+WinCE AbortData and PrefetchAbort interrupt handlers read this register
+to determine what went wrong.
+  <h3>Fault Address</h3>
+The Fault Address (mmu.h's FaultAddress) is updated by the MMU to report
+the last Virtual address which triggered an MMU error.
+  <h3>ProcessId</h3>
+This register (mmu.h's ProcessId) is used by WinCE to "bank-switch" a process
+into the low 32mb of WinCE's virtual address space.  The register contains the
+top 7 bits of an address.  Whenever the MMU operates on an address, it first
+checks if the upper 7 bits are zero.  If they are, then the MMU bitwise ORs
+the ProcessId register into the address.
+  <h3>Coprocessor Access</h3>
+The Coprocessor Access register (mmu.h's CoprocessorAccess) is a bit-field
+with one bit representing each possible coprocessor.  If a bit is set, then
+the coprocessor may be accessed from user-mode code.  Otherwise, the
+coprocessor is accessible only from kernel-mode code.
+
+<h2>Page Tables</h2>
+The ARM MMU implements a two-level page table hierarchy.  It supports
+a variety of page sizes:  1mb, 64k, 4k and 1k.  In addition, the 64k page
+supports 4 separate page permission settings (one for each 4k within it), and
+4k pages also support 4 separate page permission settings (one for each 1k
+within it).
+
+<p>Page protections are just "read" and "write":  there is no "execute"
+permission bit.  How those bits are interpreted depends on whether the
+processor is in user-mode or kernel-mode.  In user-mode, the permissions
+are interpreted as one would expect.  In kernel-mode however, the kernel
+has read access to all pages and write access to any page marked as
+read, write, or read/write.
+
+<p>For the emulator, we are interested in mapping WinCE virtual addresses
+to WinCE physical addresses, then mapping those to Win32 virtual addresses.
+Both steps are accomplished at once:  the emulator needs to "know" the
+WinCE physical address only in one case, to be explained later.  For
+performance reasons, 4 specialized versions of this mapping function are
+created via C++ templates:  MMU::MapGuestVirtualToHost() has versions that
+check for read access, write access, read/write access, and execute access
+(which is identical to read, but useful to distinguish).  Given a WinCE
+virtual address, these routines return back a Win32 pointer which corresponds
+to that address, or NULL if the WinCE address triggers an MMU fault.
+
+<p>The one special case where a WinCE physical address is required is for
+memory-mapped I/O.  If a WinCE virtual address maps to a memory-mapped I/O
+device, then the emulator needs to use the WinCE physical address to select
+which I/O device to access.  To accomplish this, we use the following snippet
+of code:
+<pre>
+    size_t HostEffectiveAddress;  // "Host" means Win32 virtual address
+                                  // and "Guest" means WinCE/PocketPC
+
+    // Request read access to the WinCE GuestAddress
+    HostEffectiveAddress = Mmu.MmuMapRead.MapGuestVirtualToHost(GuestAddress);
+    if (HostEffectiveAddress == 0) {
+        // Either an MMU error or a memory-mapped IO access
+        if (BoardIOAddress) {
+            // A memory-mapped IO address - perform IO here
+        } else {
+            // An MMU error: report the exception now
+        }
+    } else {
+        // Mapping was successful: *(unsigned __int32*)HostEffectiveAddress
+        // can be used to access WinCE virtual address "GuestAddress"
+    }
+</pre>
+The assumption in the MMU interface is that 99% of mappings are to WinCE
+ROM/RAM and not I/O, so this execution path is fastest.  There is no sense
+in having each caller to MapGuestVirtualToHost allocating space for an "out"
+pointer to an IOAddress when most callers won't ever examine it.  The
+BoardIOAddress variable is set only when the MapGuestVirtualToHost() determines
+that the WinCE physical address corresponds to an I/O device, and the BoardIOAddress
+is set to that physical address, and it is read by the emulator's device I/O
+emulation code.  Otherwise, the BoardIOAddress variable is unused.
+
+<p>When the MMU is disabled, call Mmu.MapGuestPhysicalToHost() to convert
+guest physical addresses into Win32 virtual addresses.
+
+<h2>Translation Lookaside Buffers (TLBs)</h2>
+Even in a hardware MMU, walking the 2-level page table tree on each
+memory reference is too expensive:  RAM is slow!.  So MMUs contain
+caches of recent walks of the page table, called Translation Lookaside
+Buffers (TLBs).  ARM has 64 TLBs for data accesses and 64 for instruction
+accesses.  Each TLB "slot" caches one PTE along with the virtual address
+it represents.
+
+<p>The MMU emulator must support TLBs:  the WinCE kernel depends on
+the caching behavior of TLBs in its virtual memory manager.  Unfortunately,
+a hardware MMU can efficiently search the TLB slots in parallel (and the slots
+are stored in-chip as registers), while a software emulated MMU must perform
+an expensive serial search of a RAM-based list.
+
+<p>To reduce the cost of this search search, the emulator makes use of
+a tendency for individual "load" and "store" instructions to reference the
+same or similar virtual address many times in a row.  Instead of walking
+the TLB slots from start to end each time, results of a previous TLB walk
+are associated with each load and store instruction and those results are
+used to predict which slot to access the next time.  ie.
+<pre>
+    unsigned __int8 TLBSlotCache;
+    size_t HostEffectiveAddress;
+
+    TLBSlotCache = 0;
+    HostEffectiveAddress=Mmu.MmuMapRead.MapGuestVirtualToHost(GuestAddress, &TLBSlotCache);
+    ...
+    HostEffectiveAddress=Mmu.MmuMapRead.MapGuestVirtualToHost(GuestAddress+4, &TLBSlotCache);
+</pre>
+In this code sample, the first MapGuestVirtualToHost() call likely must scan
+all 64 TLB slots, and if no match is found, walk the page table.  Once it has
+finished, it populates a TLB slot with the search results, and sets the
+TLBSlotCache variable to contain the TLB slot number (0...63).  The second
+MapGuestVirtualToHost() call passes the same TLBSlotCache value, so if
+GuestAddress and GuestAddress+4 are contained within the same ARM page,
+the second call will look first into the correct TLB slot and return
+immediately.
+
+<h2>WinCE Physical Addresses</h3>
+WinCE Physical addresses can be in one of three classes:
+<ol>
+  <li>RAM</li>
+  <li>Flash</li>
+  <li>I/O space</li>
+</ol>
+
+<p>RAM is implemented as a Win32 array called PhysicalMemory in Boards\smdk2410\board.cpp.
+On ARM, RAM is often not located at physical address 0, so the
+constant PHYSICAL_MEMORY_BASE defines the physical address where RAM begins.
+The mmu.cpp contains board-independent MMU code, while Board.cpp contains
+the actual RAM and Flash along with routines for mapping guest physical
+address into those arrays.
+
+<p>Flash memory is readable directly, as if it was RAM.  Writes to flash
+are complex, but essentially act more like a peripheral device access.
+The emulator implements flash memory as a Win32 array called FlashMemory
+in mmu.cpp, plus an optional FlashBank0 array, also in mmu.cpp.  These
+have WinCE physical base addresses FLASH_MEMORY_BASE, and 0, respectively.
+
+<p>If the Board encounters a physical WinCE address which falls within the
+boundaries of any of these three regions, then the Board returns the correct
+address within that region as its return value.  If the address falls outside
+of all three regions, then the Board assumes that the address is in I/O space,
+sets BoardIOAddress to the WinCE guest physical address, and returns NULL.
+
+<h2>WinCE's Requirements</h2>
+ <h3>Page Access</h3>
+WinCE assumes that the ControlRegister.S bit be 0 and ControlRegister.R
+bit be 1, which controls how read and write permissions are interpreted.
+
+<p>WinCE also sets the MMU's DomainAccessControl to 1, so pages with
+Domain==0 are accessible, and all pages with other Domain values are
+inaccessible.
+
+ <h3>TLBs Caching Page Table Walks</h3>
+<p>The WinCE virtual memory manager depends on hardware TLBs caching
+page table walk results:  if an LDM or STM instruction spans two memory pages,
+the instruction will trigger a page fault on the first page, which WinCE
+resolves by creating a PTE.  The hardware then retries the memory access,
+finds the PTE, and succeeds.  The hardware then triggers a page fault on the
+second page, which WinCE resolves by creating a new PTE.  Unfortunately,
+creation of the new PTE sometimes removes the PTE for the firt page from the
+page table.  When the WinCE kernel restarts the instruction, the page table
+now contains a PTE for the second page but not the first.  Without TLBs to
+cache page table walks, the LDM or STM would tigger an infinite loop,
+faulting first on the first page then on the second page, then back on the
+first page, etc.
+
+<p>The TLBs prevent the infinite loop:  when the second PTE is created and
+the instruction restarted, a TLB still contains the cache results of the
+first page access, so the LDM/STM can successfully access the first page,
+then walk the page table to access the second page and complete succcesfully.
+
+ <h3>Enabling the MMU</h3>
+During bootup, WinCE enables the MMU, switching from physical addresses to
+virtual.  The ARM documentation strongly recommends that just before
+enabling the MMU, that the OS sets up a page table that creates a 1:1
+mapping between virtual and physical addresses.  Otherwise, the instruction
+following the the one that enables the MMU may not be executed:  the
+instruction pointer will still contain an address which is a valid physical
+address but potentially not a valid virtual one.
+
+<p>Unfortunately, WinCE does not create this 1:1 mapping.  Instead, before
+enabling the MMU, it loads a valid virtual code address into a GPR, enables
+the MMU, then performs an indirect jump through the GPR.  This works due to
+the 2-instruction prefetch queue on ARM:  when the MMU is enabled, the
+processor has already fetched the following instruction from RAM, so although
+the instruction is no longer at a valid virtual address, it executes anyway.
+
+<p>The emulator doesn't directly emulate the 2-instruction prefetch.  In fact,
+when the MMU is enabled, it must flush the Translation Cache, since the
+cache now contains calls to the wrong MMU guest-to-host mapping function.
+To work around the WinCE assuption, when the MMU is enabled, the emulator
+creates "fake" TLB entry with a 1:1 virtual-to-physical mapping that contains
+the address of the jump instruction following the coprocessor instruction
+which enabled the MMU.  This allows the jump instruction to be jitted
+even though it is at an illegal address.
+
+<h2>Instruction Cache Flushes</h2>
+Whenever WinCE triggers an ARM I-Cache flush (by executing the MMU
+coprocessor instruction to flush an I-Cache line or the entire I-Cache),
+the MMU calls FlushTranslationCache() to clear the contents of the
+Translation Cache, then returns to CpuSimulate() to JIT new code and
+continue execution.  Care must be taken not to call FlushTranslationCache
+directly from jitted code, since the cache flush will invalidate the
+return address.  Calls to FlushTranslationCache are always made via a
+helper routine located outside of the cache.
+
+<hr>
+</body> </html>

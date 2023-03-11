@@ -1,0 +1,201 @@
+body		
+{ 
+  font: 10pt verdana, Arial; color: "#333333"; margin-left: 10px;
+}
+
+div.future
+{
+  font: 9pt/12pt verdana,Arial;
+  background-color: #eeeeee;
+  border:thin groove;
+}
+
+div.todo
+{
+  font: 9pt/12pt verdana,Arial;
+  background-color: #FFFFCC;
+  border:thin groove;
+}
+
+div.issue
+{
+  bordercolordark: #FF0000;
+  bordercolorlight: #FFFFFF; 
+  font-color: #FFFFFF;
+  background-color: #FFFFFF;
+  width="90%"; 
+  border: 3 solid #FF0000 
+}
+
+p.todo
+{
+  font: 9pt/12pt verdana,Arial;
+  background-color: #FFFFCC;
+  border:thin groove;
+}
+
+p.issue
+{
+  bordercolordark: #FF0000;
+  bordercolorlight: #FFFFFF; 
+  font-color: #FFFFFF;
+  background-color: #FFFFFF;
+  width="90%"; 
+  border: 3 solid #FF0000 
+}
+
+table        
+{ 
+  bordercolordark: #FFFFFF;
+  bordercolorlight: #FFFFFF; 
+  cellpadding: 1; 
+  cellspacing: 0; 
+  background-color: #FFFFFF;
+  border: thin groove
+}
+
+table.plain        
+{ 
+  bordercolordark: #FFFFFF;
+  bordercolorlight: #FFFFFF; 
+  cellpadding: 1; 
+  cellspacing: 0; 
+  background-color: #FFFFFF;
+  border: 0 solid #FFFFFF 
+}
+
+table.issue        
+{ 
+  bordercolordark: #FF0000;
+  bordercolorlight: #FFFFFF; 
+  cellpadding: 1; 
+  cellspacing: 0; 
+  font-color: #FFFFFF;
+  background-color: #FFFFFF;
+  width="90%"; 
+  border: 3 solid #FF0000 
+}
+
+table.bakeometer
+{ 
+  bordercolordark: #008080;
+  bordercolorlight: #800080; 
+  cellpadding: 1; 
+  cellspacing: 0; 
+  width="170"; 
+  background-color: #FFFF00;
+  border:thin groove
+}
+
+table.todo        
+{ 
+  bordercolordark: #008080;
+  bordercolorlight: #800080; 
+  cellpadding: 1; 
+  cellspacing: 0; 
+  background-color: #FFFFCC;
+  width="90%"; 
+  border: 1 solid #0000FF
+}
+
+table.future
+{ 
+  bordercolordark: #008080;
+  bordercolorlight: #800080; 
+  cellpadding: 1; 
+  cellspacing: 0; 
+  width="90%"; 
+  background-color: #eeeeee;
+  border:thin groove;
+}
+
+
+tbody        
+{ 
+  font-size: 10pt 
+}
+
+p		
+{ 
+  font: 9pt/12pt verdana,Arial;
+  color: "#333333";
+}
+
+a:link		
+{ 
+  color: "#0080c0"; 
+} D
+
+a:visited 	
+{  
+  color: "#0080c0"; 
+}
+
+a:active	
+{ 
+  color: "gray"; 
+}
+
+hr		{color: "black";
+		margin-left: 0px;
+		margin-right: 0px;
+		line-height:5pt;}
+
+h1		{ font: 30pt trebuchet MS, verdana, arial;
+		margin-left: 2px;
+		color: "#000080";}
+
+h2 		{font: 16pt verdana, arial;
+	  	color: #000080;
+		margin-left: 2px;
+		font-weight: bold;}
+
+h2.top 		{font: 16pt verdana, arial;
+	  	color: #FFFFFF;
+                background-color: #000080;D
+		margin-left: 2px;
+		font-weight: bold;}
+
+h3		{font: 12pt verdana, arial;
+	 	color: "#000080";
+		margin-left: 2px;
+		font-weight: bold;}
+
+h3.underline	{font: 12pt verdana, arial;
+	 	color: "#000080";
+		margin-left: 2px;
+		font-weight: bold;
+                text-decoration: underline;}                  }
+
+h4		{font: 10pt verdana, arial;
+		color: "#000080";
+		margin-left: 10px;}
+
+h4.disclaimer	{font: 10pt verdana, arial;
+		color: "#FF0000";
+		margin-left: 10px;}
+
+
+h5		{font: 14pt trebuchet MS, verdana, arial;
+		color: "#000080";}
+
+li.none         {list-style-type: none;}
+li.inside       {list-style-position: inside;}
+
+ul.none         {list-style-type: none;}
+ul.inside       {list-style-position: inside;}
+
+ol.none         {list-style-type: none;}
+ol.inside       {list-style-position: inside;}
+
+ul li.disc      {list-style-type: disk;}
+ul li.circle    {list-style-type: circle;}
+ul li.square    {list-style-type: square;}
+
+ol li.upperA    {list-style-type: upper-alpha;}
+ol li.lowerA    {list-style-type: lower-alpha;}
+ol li.upperR    {list-style-type: upper-roman;}
+ol li.lowerR    {list-style-type: lower-roman;}
+ol li.decimal   {list-style-type: decimal;}
+
+

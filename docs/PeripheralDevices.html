@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>Peripheral Devices</title>
+<link rel="stylesheet" type="text/css"  href="emulator.css">
+</head>
+
+<body>
+<h1>Peripheral Devices</h1>
+
+<h2>Memory-mapped I/O</h2>
+
+ <h3>Accessing from jitted code</h3>
+The <a href="Mmu.html">MMU devdoc</a> describes how the MMU emulator
+determines if a WinCE address corresponds to RAM/Flash vs device I/O
+space.  If the MMU determines that the address is in I/O space, jitted code
+must call one of the following methods (prototyped in
+Boards\mappedio.h and implemented in Boards\mappedio.cpp):
+<ul>
+  <li>unsigned __int8 ReadByte(void)</li>
+  <li>unsigned __int16 ReadHalf(void)</li>
+  <li>unsigned __int32 ReadWord(void)</li>
+  <li>void WriteByte(unsigned __int8 Value)</li>
+  <li>void WriteHalf(unsigned __int16 Value)</li>
+  <li>void WriteWord(unsigned __int32 Value)</li>
+</ul>
+These functions all use the global variable BoardIOAddress to determine
+which peripheral device emulator to invoke.
+
+  <h3>List of peripheral devices</h3>
+Each of the Read*() and Write*() APIs binary searches a table of entries, each
+containing three values:
+<ol>
+  <li>Peripheral device's base address</li>
+  <li>Number of bytes of registers used by the device</li>
+  <li>Pointer to C++ class derived from MappedIODevice, that implements
+      emulation for the peripheral device</li>
+</ol>
+The table is created when the emulator is compiled, and is specific to
+each motherboard emulated.  The table is defined in Boards\smdk2410\mappediodevices.h, which
+is included multiple times, to serve several purposes.  Here is an entry
+from mappediodevices:
+<pre>
+    MAPPEDIODEVICE(IOUART0, UART0, 0x50000000, 0x2c)
+</pre>
+The first field specifies the C++ class name for the device (class IOUART0,
+derived from MappedIODevice).  The second specifies the C++ variable name
+to declare, to instantiate the class (ie. "class IOUART0 UART0;").  The
+next field is the base address of the device (it begins at physical WinCE
+address 0x50000000).  Finally, the last field indicates the number of bytes
+that the IO Device supports (0x2c, so the device spans 0x50000000 to
+0x5000002c, inclusively).
+
+   <h3>Dispatching to a specific peripheral device emulator</h3>
+The mappedio.cpp Read*() and Write*() APIs binary-search the list of
+peripheral devices, searching for the device whose address range includes
+the Mmu.IOAddress value.  Once the appropriate record has been found, the
+APIs acquire the IOLock critical section, call the appropriate Read or
+Write method on the device's C++ class (subtracing the device's base
+address from the BoardIOAddress value), then unlocking the IOLock.
+
+<p>This strategy allows a single C++ class to be instantiated multiple
+times, to implement several instances of a peripheral device at different
+addresses within the WinCE I/O space.  For example, mappediodevices.h
+could declare:
+<pre>
+    MAPPEDIODEVICE(IOUART, UART0, 0x50000000, 0x2c)
+    MAPPEDIODEVICE(IOUART, UART1, 0x50001000, 0x2c)
+    MAPPEDIODEVICE(IOUART, UART2, 0x50002000, 0x2c)
+</pre>
+This way, one IOUART class is instantiated three times, to define
+"class IOUART UART0; class IOUART UART1; class IOUART UART2;", resulting
+in code savings.  The IOUART class's Read*() and Write*() methods
+need only cope with addresses between 0 and 0x2c inclusive, without needing
+to be concerned about where the instance is mapped into WinCE's IO space.
+
+<h2>Programming Model</h2>
+ <h3>class MappedIODevice</h3>
+  <h4>bool PowerOn(void)</h4>
+The PowerOn() method is called during emulator startup, and gives the
+peripheral device emulator a chance to perform initialization.  If any
+device's PowerOn() fails, then the emulator's boot fails and it exits.
+
+  <h4>__int8/16/32 ReadByte/Half/Word(unsigned __int32 IOAddress)</h4>
+The ReadByte, ReadHalf, and ReadWord methods are called from jitted code.
+The IOAddress parameter is relative to the base address of the device.  The
+return value is the value read from the device.
+
+  <h4>void WriteByte/Half/Word(unsigned __int32 IOAddress, unsigned __int8/16/32 Value)</h4>
+The WriteByte, WriteHalf, and WriteWork methods are called from jitted code.
+The IOAddress parameter is relative to the base address of the device.  The
+Value parameter is the value to write.
+
+  <h4>void SaveState(StateFiler& filer)</h4>
+Called by the emulator to give the device a chance to write any state to
+the emulator's save-state file.  The StateFiler parameter contains
+methods to save individual fields and to LZ-compress large memory regions.
+Any changes to a SaveState() implementation that change the save-state file
+format may be accompanied by a change to the StateVersion global variable
+in state.cpp.
+
+  <h4>void RestoreState(StateFiler& filer)</h4>
+Called by the emulator to read a devices state back from a save-state file.
+
+ <h3>class PCMCIADevice</h3>
+   This class derives from MappedIODevice, and extends it with the following
+   additional methods, to support emulation of pluggable PCMCIA-based
+   devices.
+  <h4>void PowerOff(void)</h4>
+Called by the emulator when the user simulates ejection of the card, or when
+the PCMCIA controller de-powers the card slot.
+
+  <h4>unsigned __int8/16 ReadMemoryByte/Half(unsigned __int32 IOAddress)</h4>
+Called by jitted code when it accesses a mapped PCMCIA memory window.
+
+  <h4>WriteMemoryByte/Half(unsigned __int32  IOAddress, unsigned __int8/16 Value)</h4>
+Called by jitted code when it accesses a mapped PCMCIA memory window.
+
+  <h3>Multithreading</h3>
+Before calling a Read or Write method, the mapped I/O device dispatcher
+acquires a critical section, the IOLock.  If a peripeheral device
+implementation uses additional Win32 worker threads, they can acquire the
+IOLock before modifying the device's emulated state.
+
+  <h3>The Default Device Class</h3>
+The MappedIODevice base class is not pure-virtual:  there are default
+implementations for all of the methods, which assert if called, then
+act as no-ops:  reads always return 0, writes are always ignored.
+PowerOn() returns true without asserting, and Save/Restore are no-ops.
+
+<p>This allows a peripheral device emulator to choose to implement just
+the methods it requires:  if a device expects only word-sized accesses, then
+it can implement just ReadWord and WriteWord, and use the default byte and
+halfword methods, knowing that inadvertent usage of the default methods
+will trigger an assert.
+
+   <h3>Device I/O to unknown addresses</h3>
+If the WinCE physical address doesn't correspond to any peripheral device
+emulator registered with the mappedio manager, then the mappedio manager
+directs the calls to a simple no-op device in which reads return 0 and
+writes are ignored.  The emulator logs a warning to stdout when this happens,
+to remind the developer that there may be I/O to an unknown or unsupported
+peripheral device.
+
+  <h3>General Design Philosophy</h3>
+An emulated peripheral device class generally follows this structure:
+   <h4>Location in the source tree</h4>
+Each emulated motherboard has a separate .h and .cpp file that contains
+its peripheral devices, under Boards\&ltboard-name%gt:
+<ul>
+  <li>SMDK2410</li>
+</ul>
+
+   <h4>Private instance data</h4>
+The private instance data includes the device's registers as described
+in the documentation.  The Read*() and Write*() methods then switch
+on the IOAddress parameter and read or write the private instance data
+according to the device's documentation.
+
+   <h4>State Machine</h4>
+In general, writes to the device update an emulated device register, advancing
+the device's state machine one step.  Reads to the device generally do not
+modifiy the devices state, and usually simply read a private instance data
+and return the value without running much code.  That is, reads are generally
+fast as they don't modify the state of the device, and writes are generally
+slower as they modify the device's state.
+
+<p>Any time an emulated peripheral device calls a Win32 API, it must be robust
+against the API call failing.  In some rare cases, the device can report
+the error back via a status register to WinCE, but generally, the API failure
+must be silently handled.  Allocations and object creation should be performed
+in the PowerOn() method whenever possible, as it is a "safe" place for
+allocation failures to take place.
+
+    <h4>Lack of poweroff for non-PCMCIA devices</h4>
+The device emulator doesn't have explicit shutdown code.  Instead, it depends
+entirely on NT's process-exit code to do teardown and release resources.
+
+<hr>
+</body> </html>

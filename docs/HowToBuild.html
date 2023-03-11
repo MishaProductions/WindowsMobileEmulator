@@ -1,0 +1,55 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>How To Build</title>
+<link rel="stylesheet" type="text/css"  href="emulator.css">
+</head>
+
+<body>
+<h1>One-Time Setup</h1>
+<h2>ZLib</h2>
+ZLib is used for data compression within the DevicemEumlator, particularly
+in the savestate (.dess) files, to save disk space.
+
+<p>Download zlib and expand it into features\zlib.  The latest version is
+recommended:  zlib-1.2.3 is known to build and work inside the DeviceEmulator.
+
+<h2>LibPNG</h2>
+LibPNG is used by the skin engine to support .png files.
+
+<p>Download libpng and expand it into features\libpng.  The latest version is
+recommended:  libpng 1.2.8 is known to build and work inside the
+DeviceEmulator.
+
+<h1>Building</h1>
+Open DeviceEmulator.sln in Visual Studio 2005.  Use the Build menu to build
+the entire solution.  In a few minutes, it will generate a DeviceEmulator.exe
+and a 1033\DeviceEmulatorUI.dll.  The total disk space required for debug
+and release builds along with the source tree is around 125mb.
+
+<h2>Build Configurations</h2>
+The Release configuration is the version that ships to customers.  Notable
+settings are:
+<ul>
+  <li>Full C++ optimizations</li>
+  <li>Link-time code generation, to enable cross-module inlining</li>
+  <li>No assertions</li>
+</ul>
+
+<p>The Debug configuration is slower, but easier to debug.  Notable settings
+are:
+<ul>
+  <li>C++ optimizations disabled, to enable source-level debugging</li>
+  <li>Assertions, which trigger a GUI MessageBox containing the assertion
+      text, source file and line number.</li>
+</ul>
+
+<h1>Running the Results</h1>
+The Shared Source DeviceEmulator's command line is identical to the V1
+emulator's.  To replace the V1 emulator with the Shared Source version, run
+"DeviceEmulator.exe /register" to execute the emulator's COM self-reg code.
+This enables the Shared Source emulator to be launched from Visual Studio
+and from the V1 Device Emulator Manager application, and to participate in
+ActiveSync-over-DMA.
+
+<hr>
+</body> </html>

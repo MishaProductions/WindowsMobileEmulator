@@ -1,0 +1,190 @@
+/*++
+
+ Copyright (c) 2006 Microsoft Corporation.  All rights reserved.
+
+ The use and distribution terms for this software are contained in the file
+ named license.rtf, which can be found in the root of this distribution.
+ By using this software in any fashion, you are agreeing to be bound by the
+ terms of this license.
+
+ You must not remove this notice, or any other, from this software.
+
+--*/
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_EMULCONFIG DIALOGEX 0, 0, 348, 205
+STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CONTEXTHELP
+CAPTION "Emulator Properties"
+FONT 8, "MS Shell Dlg", 0, 0, 0x0
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,237,182,50,16
+    PUSHBUTTON      "Cancel",IDCANCEL,291,182,50,16
+    CONTROL         "",IDC_TAB,"SysTabControl32",WS_TABSTOP,7,7,334,171
+END
+
+IDD_EMCONFIGGENERALPAGE DIALOGEX 0, 0, 334, 178
+STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
+FONT 8, "MS Shell Dlg", 0, 0, 0x0
+BEGIN
+    LTEXT           "&OS image name:",IDC_CAPTIONOSIMAGE,4,4,326,9
+    EDITTEXT        IDC_IMAGENAME,4,15,304,12,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "...",IDC_BROWSEOSIMAGE,312,15,14,12
+
+    CONTROL         "&Specify ROM image address:",IDC_SPECIFYADDRESS,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,34,170,10
+    EDITTEXT        IDC_IMAGEADDRESS,4,45,100,12
+
+    CONTROL         "Specify &RAM size:",IDC_SPECIFYRAMSIZE,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,174,34,326,10
+    EDITTEXT        IDC_RAMSIZE,174,45,100,12, ES_NUMBER
+
+    LTEXT           "&Flash memory file:",IDC_CAPTIONFLASHFILE,4,64,326,9
+    EDITTEXT        IDC_FLASHFILE,4,75,304,12,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "...",IDC_BROWSEFLASHFILE,312,75,14,12
+
+    LTEXT           "&Host key:",IDC_STATIC,4,94,326,9
+    COMBOBOX        IDC_HOSTKEY,4,105,165,150,CBS_DROPDOWNLIST | CBS_SORT |
+                    WS_VSCROLL | WS_TABSTOP
+
+    LTEXT           "Sh&ared folder:",IDC_CAPTIONSHAREDFOLDER,4,124,326,9
+    EDITTEXT        IDC_SHAREDFOLDERNAME,4,135,304,12,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "...",IDC_BROWSEFOLDERSHARE,312,135,14,12
+
+END
+
+IDD_EMCONFIGDISPLAYPAGE DIALOGEX 0, 0, 334, 178
+STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
+FONT 8, "MS Shell Dlg", 0, 0, 0x0
+BEGIN
+    CONTROL         "&Skin:",IDC_RADIOSKIN,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,4,4,326,9
+    CONTROL         "&Video:",IDC_RADIOVIDEO,"Button",
+                    BS_AUTORADIOBUTTON | WS_TABSTOP,4,34,326,9
+    EDITTEXT        IDC_SKINNAME,16,15,292,12, ES_LEFT | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_BROWSESKIN,312,15,14,12
+    LTEXT           "Screen &width:",IDC_CAPTIONWIDTH,16,47,82,9
+    EDITTEXT        IDC_SCREENWIDTH,100,45,50,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "pixels",IDC_CAPTIONWIDTH2,156,47,100,9
+    LTEXT           "Screen heigh&t:",IDC_CAPTIONHEIGHT,16,62,82,9
+    EDITTEXT        IDC_SCREENHEIGHT,100,60,50,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "pixels",IDC_CAPTIONHEIGHT2,156,62,100,9
+    LTEXT           "&Color depth:",IDC_CAPTIONCOLORDEPTH,16,77,82,9
+    COMBOBOX        IDC_COLORDEPTH,100,75,50,120,CBS_DROPDOWNLIST |
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "bits per pixel",IDC_CAPTIONCOLORDEPTH2,156,77,100,9
+
+    LTEXT           "&Orientation:",IDC_STATIC,4,97,82,9
+    COMBOBOX        IDC_ORIENTATION,88,95,50,150,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "degrees",IDC_STATIC,144,97,100,9
+
+    CONTROL         "&Zoom 2x",IDC_ZOOM2X,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,112,326,9
+    CONTROL         "&Always on top",IDC_ALWAYSONTOP,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,126,326,9
+    CONTROL         "&Enable tooltips",IDC_ENABLETOOLTIPS,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,140,326,9
+END
+
+IDD_EMCONFIGNETWORKPAGE DIALOGEX 0, 0, 334, 178
+STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
+FONT 8, "MS Shell Dlg", 0, 0, 0x0
+BEGIN
+    CONTROL         "Enable &NE2000 PCMCIA network adapter and bind to:",IDC_NE2000,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,4,326,10
+    COMBOBOX        IDC_NE2000COMBO,4,15,322,150,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+
+    CONTROL         "Enable &CS8900 network adapter and bind to:",IDC_CS8900,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,34,326,10
+    COMBOBOX        IDC_CS8900COMBO,4,45,322,150,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+
+    CONTROL         "&Host-only networking",IDC_HOSTONLYNET,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,64,326,10
+END
+
+IDD_EMCONFIGPERIPHERALSPAGE DIALOGEX 0, 0, 334, 178
+STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
+FONT 8, "MS Shell Dlg", 0, 0, 0x0
+BEGIN
+    LTEXT           "Serial port &0:",IDC_STATIC,4,4,326,9
+    COMBOBOX        IDC_SERIAL0,4,15,304,150,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "...",IDC_BROWSESERIALPORTFILE0,312,15,14,12
+
+    LTEXT           "Serial port &1:",IDC_STATIC,4,34,326,9
+    COMBOBOX        IDC_SERIAL1,4,45,304,150,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "...",IDC_BROWSESERIALPORTFILE1,312,45,14,12
+
+    LTEXT           "Serial port &2:",IDC_STATIC,4,64,326,9
+    COMBOBOX        IDC_SERIAL2,4,75,304,150,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "...",IDC_BROWSESERIALPORTFILE2,312,75,14,12
+
+    CONTROL         "&Create text console window for serial port 1",IDC_CREATECONSOLE,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,4,94,326,10
+END
+
+
+STRINGTABLE
+BEGIN
+    IDS_INVALID_MEMSIZE,        "Memory size value must be between 64 and 256."
+    IDS_INVALID_SCREENWIDTH,    "Screen width value must be an even number between 64 and 800."
+    IDS_INVALID_SCREENHEIGHT,   "Screen height value must be an even number between 64 and 800."
+    IDS_INVALID_SERIALPORT0_1,  "Serial port 0 and serial port 1 cannot be assigned the same physical port."
+    IDS_INVALID_SERIALPORT0_2,  "Serial port 0 and serial port 2 cannot be assigned the same physical port."
+    IDS_INVALID_SERIALPORT1_2,  "Serial port 1 and serial port 2 cannot be assigned the same physical port."
+    IDS_MISSING_SKINFILE        "You must enter a valid skin file, if you select to display a skin."
+    IDS_MISSING_IMAGEFILE       "You must enter a valid image file."
+    IDS_INVALID_IMAGEADDRESS    "Image address must be a numeric positive value."
+    IDS_NONEXISTANT_SKINFILE    "Skin file does not exist. Do you want to change it?"
+    IDS_NONEXISTANT_IMAGEFILE   "Image file does not exist. Do you want to change it?"
+    IDS_BROWSE_DIRECTORY_CAPTION "Select the root of the directory tree to be shared with the guest OS:"
+
+    IDS_MISSING_MEMSIZE         "You must enter a valid memory size."
+    IDS_MISSING_IMAGEADDRESS    "You must enter a valid image start address."
+    IDS_NONE,                   "None"
+    IDS_LEFTSHIFT,              "Left Shift"
+    IDS_LEFTCONTROL,            "Left Control"
+    IDS_ALT,                    "Left Alt"
+    IDS_LEFTWINDOWS,            "Left Windows"
+    IDS_RIGHTSHIFT,             "Right Shift"
+    IDS_RIGHTCONTROL,           "Right Control"
+    IDS_RIGHTALT,               "Right Alt"
+    IDS_RIGHTWINDOWS,           "Right Windows"
+    IDS_APPLICATIONS,           "Applications"
+
+    IDS_DEFAULT,                "Connected network card"
+    IDS_PORTNONE,               "(Do not map)"
+    IDS_PORTFILE,               "File:"
+    IDS_SERIALFILEFILTER,       "Serial port files (*.txt)|*.txt"
+    IDS_IMAGEFILEFILTER,        "OS Image files (*.bin or *.nb0)|*.bin;*.nb0"
+    IDS_FLASHFILEFILTER,        "Flash memory files (*.bin)|*.bin"
+    IDS_SKINFILEFILTER,         "Skin files (*.xml)|*.xml"
+
+    IDS_EMULGENERALTAB,         "General"
+    IDS_EMULDISPLAYTAB,         "Display"
+    IDS_EMULNETWORKTAB,         "Network"
+    IDS_EMULPERIPHERALSTAB,     "Peripherals"
+
+    IDS_EXCEPTION,              "An internal error has occurred. Free some resources and try again.\n"
+    IDS_ERRORCODE,              "Error code: "
+    IDS_OUTOFMEMORY,            "Memory could not be allocated. Free some resources and try again.\n"
+    IDS_ERRORBOXTITLE,          "Microsoft Device Emulator"
+
+    IDS_BROWSE_FOR_SERIAL0      "Browse for file to bind to serial 0"
+    IDS_BROWSE_FOR_SERIAL1      "Browse for file to bind to serial 1"
+    IDS_BROWSE_FOR_SERIAL2      "Browse for file to bind to serial 2"
+    IDS_BROWSE_FOR_SKIN         "Browse for skin file"
+    IDS_BROWSE_FOR_FLASH        "Browse for flash file"
+    IDS_BROWSE_FOR_OSIMAGE      "Browse for OS image file"
+    IDS_BROWSE_FOR_FOLDERSHARE  "Browse for folder sharing directory"
+
+END
+
+ID_TABACCEL ACCELERATORS DISCARDABLE
+BEGIN
+    VK_TAB, ID_CTRLTAB, CONTROL, VIRTKEY
+    VK_TAB, ID_CTRLSHIFTTAB, CONTROL, SHIFT, VIRTKEY
+END
+

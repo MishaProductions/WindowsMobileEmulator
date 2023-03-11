@@ -1,0 +1,852 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>ARM-to-x86 JIT compiler</title>
+<link rel="stylesheet" type="text/css"  href="emulator.css">
+</head>
+
+<body>
+<h1>ARM-to-x86 JIT compiler</h1>
+
+<p>The ARM-to-x86 JIT compiler is responsible for disassembling ARM/Thumb
+instructions, translating them into a block of in-memory x86 machine code,
+and executing that machine code.
+
+<p>The JIT is structured much like a traditional compiler:  it has two
+parsers (one takes ARM opcodes as input and one that takes Thumb), which
+construct an abstract internal representation of the input (IR), an IR-level
+optimizer, and a code generator.
+
+<p>However, the JIT must run in an environment quite different than a
+traditional compiler:
+<ul>
+  <li>Hard realtime performance constrains the compilation process:  each
+      millisecond, a timer interrupt fires in WinCE, and the JIT must be
+      able to begin from an empty cache, JIT all of the code in the interrupt
+      handler's code-path and execute that code before the next timer
+      interrupt arrives.  It also needs to be able to make some progress at
+      JITting and executing code outside of the interrupt code-path within
+      each 1ms timeslice.</li>
+  <li>Incomplete view of the input data.  The JIT can look ahead several
+      instructions, but must be able to cope with situations such as the
+      lookahead encountering a virtual-memory page which isn't currently
+      accessible, and cases where the ARM/Thumb code itself is incomplete
+      (say, because the .NETCF JIT is JITing MSIL to ARM while the Device
+      Emulator's JIT is jitting that ARM to x86).</li>
+  <li>Basic blocks, functions, and other useful boundaries are incomplete
+      or missing.  Since the JIT cannot "see" all ARM/Thumb code within
+      the virtual machine (it may not have been generated, or an ARM DLL
+      may be loaded over ethernet), there is always the possibility that
+      the act of jitting new code may invalidate assumptions made about
+      previously jitted code.  Even indirect JUMP, CALL and RETURN opcodes
+      may invalidate assumptions made by the JIT</li>
+  <li>Instruction cache flushes are frequent (often several per second).
+      The WinCE kernel flushes the entire ARM I-Cache whenever a page of
+      virtual memory is freed, so DLL unloads, most VirtualFree() calls and
+      several other operations trigger I-Cache flushes.  The JIT must flush
+      its cache whenever the ARM I-Cache is flushed:  they both cache the
+      same class of data.  It is worth noting here that WinCE 4.20 has
+      a bug, where the I-Cache is not flushed appropriately by the WinCE
+      kernel:  developers must download
+      <a href="http://kbinternal/kb/articles/818/8/81.HTM">KB818881</a> in
+      order to have correct behavior both on the Device Emulator and on
+      hardware devices which have separate I-Caches and D-Caches.</li>
+  <li>Fixed memory resources:  once it begins running, the JIT may never fail
+      due to a lack of host resources such as memory.  The JIT isn't
+      prevented from attempting to allocate more memory as it runs, but must
+      be robust against the allocation failing and be able to continue
+      jitting and executing jitted code.</li>
+</ul>
+
+<p>Since the emulator supports only uniprocessor ARM motherboards, the
+JIT compiler and jitted code need not be thread-safe: one Win32 thread
+is used to both JIT and execute the jitted code.  This represents a
+significant performance optimization: the JIT and jitted code can both
+use global variables without requiring locks, and thread-local-storage
+isn't required.
+
+<h2>Key Data Structures</h2>
+ <h3>Decoded</h3>
+The Decoded structure (defined in cpus\arm\armcpu.h.h) is a canonical
+representation for ARM and Thumb instructions.  These structures are
+populated by the ARM/Thumb instruction decoder.  The bulk of the structure is
+comprised of named bitfields corresponding to various portions of ARM/Thumb
+opcodes, such as Rd, W, U and P bits.  In addition, each Decoded contains a
+function pointer which points to the routine responsible for generating x86
+code for this ARM/Thumb instruction.  The Decoded structure also contains
+the WinCE virtual address of the instruction, information about which
+ENTRYPOINT contains it, plus fields used by the optimizer.
+
+ <h3>ENTRYPOINT</h3>
+
+ENTRYPOINT structures (defined in cpus\entrypt.h) describe runs of
+contiguous ARM or Thumb instructions that roughly correspond to a
+Basic Block.  They contain the WinCE start address and length, and the
+address of the jitted x86 code corresponding to the ARM/Thumb Basic
+Block.  Lastly, they contain information about the ARM PSR flags
+required by the Basic Block.
+
+<p>ENTRYPOINT structures are stored in a red-black binary tree,
+indexed by WinCE address, which has the property of being close to
+perfectly balanced, ensuring that search time is close to O(logN).
+The usage pattern is that inserts are rare (only while jitting new
+runs of code) and lookups are frequent (such as when resolving the the
+destination address of an indirect jump).  There are no delete operations:
+the entire tree is destroyed when the Translation Cache is flushed.
+
+<p>If the emulator detects an attempt to jump into the middle of a run
+of instructions described by an ENTRYPOINT, then the original ENTRYPOINT
+doesn't truly represent a Basic Block:  it represents at least two
+Basic blocks.  To handle this, the CPU emulator uses "sub-entrypoints":
+a single ENTRYPOINT describes a run of ARM/Thumb instructions and their
+jitted x86 equivalent.  If there is an attempt to jump into the middle of
+the run of ARM/Thumb instructions, then a new sub-ENTRYPOINT is created
+(which is an ENTRYPOINT structure but stored in a linked-list from the
+original ENTRYPOINT... not linked into the red-black tree).  The new,
+smaller run of ARM/Thumb code is jitted again, creating two runs of x86
+code describing the same ARM/Thumb code.  It is impractical to try and
+"split" an ENTRYPOINT structure into two ENTRYPOINTs:  the jitted x86 code
+is optimized according to assumptions about the preceeding code, and those
+assumptions may not be identical for the second ENTRYPOINT.
+
+
+ <h3>CPU</h3>
+The CPU structure (defined in armcpu.h) contains all of the emulated ARM CPU's
+state defined by the ARM architecture:
+<ul>
+  <li>16 General-purpose register (GPRs), each 4 bytes in size</li>
+  <li>Current Program Status Register (CPSR)</li>
+  <li>Saved Program Status Register (PSR)</li>
+  <li>Bank-switched registers for Supervisor, Abort, IRQ, and Undefined
+      modes.  FIQ mode is not supported by the emulator so there are no
+      bank-switched FIQ registers.</li>
+</ul>
+In addition, the CPU structure contains some fields not defined by the
+ARM architecture, but used by the CPU emulator itself.  They might be
+analagous to internal progressor registers not exposed to software:
+<ul>
+  <li>IRQInterruptPending - a flag indicating whether an external
+      interrupt source has requested an IRQ interrupt be raised.</li>
+</ul>
+
+<h2>Basic Components</h2>
+The main loop of the JIT is CpuSimulate().  Once called, it never returns:
+emulation of the CPU continues until the Windows process exits.  It
+executes the following sequence of steps:
+<pre>
+    while (1) {
+        ENTRYPOINT *pEP;
+        size_t NativeStart;
+
+        pEP = FindENTRYPOINT(ARM R15); // where R15 is the ARM instruction pointer
+        if (pEP) { // If R15 has already been jitted
+            NativeStart = ep->nativeStart; // prepare to jump to the jitted code
+        } else { // else R15 hasn't been jitted
+            NativeStart = JitCompile(ARM R15); // JIT it now
+        }
+        RunTranslatedCode(NativeStart); // jump to the NativeStart address
+    }
+</pre>
+
+The remainder of this document describes JitCompile().
+
+ <h3>Decoder</h3>
+<p>The Decoder (called JitDecode() in CPUs\ARM\ARMCpu.cpp) is responsible for
+disassembing either ARM or Thumb opcodes, depending on the mode bit in
+CPSR, and populating the Decoded[] array.
+
+<p>The Decoder disassembles upto 100 instructions, but may terminate early
+for a number of reasons:
+<ol>
+  <li>It encounters an unmapped WinCE page</li>
+  <li>An existing ENTRYPOINT already represents part of the instruction
+      run</li>
+  <li>An illegal instruction is detected.  This often indicates that the
+      JIT has read past ARM code and has encoutered data mixed in with
+      code instructions.</li>
+</ol>
+
+<p>Disassembly of individual ARM instructions is performed by
+DecodeARMInstruction() and disassembly of individual Thumb instructions is
+performed by DecodeThumbInstruction().  Each call populates one Decoded
+structure.
+
+<p>One special case that must be handled is where the first instruction to
+be decoded is on an unmapped WinCE page.  If this happens, JitDecode()
+returns with zero Decoded structures filled in.  In this case, the
+JIT simulates a Prefetch Abort exception.
+
+<p>With only a few exceptions, each Thumb opcode can be macro-expanded into
+one ARM opcode.  The DecodeThumbInstruction() takes advantage of this: most
+of the time, it decodes a 16-bit Thumb opcode into a 32-bit ARM opcode, then
+calls DecodeARMInstruction() to populate the Decoded structure.  Only the
+Thumb opcodes that don't have a corresponding ARM opcode are handled by
+directly populating a Decoded structure (such as "BL high half").
+
+ <h3>IR Optimizer</h3>
+<p>JitOptimizeIR() is responsible for performing optimizations upon the
+Intermediate Representation (the array of Decoded structures).
+
+   <h4>Entrypoints</h4>
+<p>First, LocateEntrypoints() scans the Decoded array and identifies basic
+blocks.  If an instruction is identified as a branch of some sort, it is
+flagged as ending a basic block.  If the destination of the branch is
+knowable at jit-time and points within the Decoded array, then the destination
+instruction is marked as beginning a new basic block.
+
+   <h4>ARM PSR Flags</h4>
+<p>Computing the ARM PSR flags on x86 is expensive: the ARM flags don't have
+precisely the same semantics as the x86 flags, and they have a different
+layout within the flags register.  ARM instructions have an explicit 'S' bit
+which controls whether the instruction must update the PSR flags or not, and
+ARM C compilers are good at setting the flag only when needed.  However, Thumb
+instructions don't have an explicit 'S' flag:  almost all Thumb instructions
+implicitly have 'S' set.  This leads to excessive computation of the ARM PSR
+flags, even when the following Thumb instruction overwrites the results.
+
+<p>To reduce the overhead of computing the ARM PSR flags, the JIT compiler
+analyzes the ARM/Thumb code to detect redundent PSR flag computations and
+remove them.  Instead of having one 'S' bit that controls computation of
+all flags, the JIT introduces separate bits for each individual flag
+(carry, overflow, zero, and negative).  The JIT then examines the code to
+determine which individual flag bits are required by each instruction, and
+clears these individual bits when redundencies are discovered.  For example:
+<pre>
+    adds r0, r1, r2
+    adcs r3, r4, r5
+    beq Label
+    bne Label
+</pre>
+In this sequence, the adds is expected to update all 4 flags (C,O,Z,N).
+The adcs requires the carry flag (it is an add-with-carry), and is expected
+to update all 4 flags.  The beq and bne instructions both test the zero flag
+and ignore the others.
+
+For example, the JIT would begin with the following data:
+<pre>
+    Instruction       Needs  Sets
+    ----------------  -----  ----
+    adds r0, r1, r2   none   COZN
+    adcs r3, r4, r5   COZN   COZN
+    beq Label1        COZN
+    bne Label2        COZN
+</pre>
+
+<p>And after the optimization pass, the JIT will optimize the flags down to:
+<pre>
+    Instruction       Needs  Sets
+    ----------------  -----  ----
+    adds r0, r1, r2   none   C
+    adcs r3, r4, r5   C        Z
+    beq Label1          Z
+    bne Label2          Z
+</pre>
+Of course, this assumes that the code at the two branch destinations,
+Label1 and Label2 don't require any PSR flags to be set.
+
+<p>The code generator can now generate much more efficient code for the
+adds and adcs instructions, knowing that it needs only compute an updated
+C and Z flag, respectively.
+
+<p>In order to determine if branch destinations require specific PSR flags,
+the ENTRYPOINT structure records the "Needs" data for the run of code it
+describes.  If a branch destination can be computed at jit-time and the
+destination is already jitted (ie. an ENTRYPOINT exists for it), then the
+ENTRYPOINT's FlagsNeeded value is used.  Otherwise, the JIT must be
+conservative and assume that all PSR flags will be needed at the destination.
+
+   <h4>ARM/Thumb Instruction-Level Optimizations</h4>
+Next, the JIT looks for specific sequences of ARM/Thumb instructions which
+can be rewritten to be more efficient for the code generator.  For example,
+if an "STR reg1, [sp, #imm]" is followed immediately by "LDR reg2, [sp, #imm]"
+within the same basic block, with the same immediate value, then the LDR can
+be rewritten to be "MOV reg2, reg1", avoiding an expensive call to the MMU
+emulator.
+
+<p>In addition, the optimization pass classifies control transfers as either
+"call", "return", or "jump" by examining the registers reference in the
+instruction.  Due to the nature of ARM/Thumb internetworking, it is common
+to encouter this sequence of code:
+<pre>
+    MOV R14, R15
+    ADD R15, #imm
+</pre>
+The "ADD" instruction modifies R15, so with no other context, it would be
+considered a "jump".  However, the previous instruction captures the
+value of R15+8 into R14, where R14 is the return-address register, and R15+8
+is the address of the instruction following the ADD.  In other words, these
+two instructions comprise a function-call.  More on why "call" and "return"
+are important to identify in a little bit...
+
+ <h3>Code Generation</h3>
+The basic philosophy of code generation is "keep it simple".  We already
+know that the JIT cache will be flushed frequently, so it is better to
+JIT quickly and run the resulting code immediately, rather than investing
+significant resources in optimizing the code.
+
+<p>In addition, the JIT targets Pentium III and Pentium IV processors.  These
+processor have advanced optimization capabilities, executing x86 code
+out-of-order, optimizing out redundent loads, etc.  In other words, there
+is little advantage in having the JIT do this work, when the underlying
+hardware can do it for us, at practically no cost.
+
+<p>So...
+<ul>
+  <li>There is no register allocator.  ARM registers are written back to the
+      ARM CPU structure in memory at ARM/Thumb instruction boundaries.</li>
+  <li>There is no tree structure for the IR:  it is simply a linear list of
+      instructions, with a very small amount of flow analysis to determine
+      basic block boundaries</li>
+  <li>There is no native-code optimizer, such as peephole.</li>
+</ul>
+
+   <h4>Generating Code</h4>
+Each Decoded structure contains a pointer to a Place...() function, which
+is responsible for generating x86 code that represents the semantics of
+the decoded ARM/Thumb instruction.  JitGenerateCode() does the following:
+<ul>
+  <li>Generates x86 code to handle the ARM condition code for the current
+      instruction.  This is fairly complex, as it attempts to optimize
+      condition-code checking to span runs of ARM code sharing identical
+      condition codes</li>
+  <li>In debug builds, emits debug logging code for the current
+      instruction.  This logging code will call the helper routine which
+      dumps the register banner and disassembled instruction to stdout.</li>
+  <li>Calls the Decoded instructions' Place...() to generate code.</li>
+  <li>Generates end-of-basic block and end-of-instruction-run cleanup code.
+      For example, at the end of a run of instructions, the JIT either
+      generates and x86 JMP to the beginning of the already-jitted
+      code that follows it, or generates a return back to CpuSimulate() to
+      JIT the code that follows.</li>
+</ul>
+
+<p>A variable, CodeLocation, is used to point to the next address where
+x86 code should be generated.  A collection of C macros are used to generate
+common x86 instructions, and a general-purpose Emit8(char value) macro
+can be used to write one byte (8 bits) to CodeLocation, then increment
+CodeLocation by one byte.  The macros are defined in place.h.  For example,
+the "Emit_MOV_DWORDPTR_Reg(Ptr, Reg)" macro emits a "MOV DWORD PTR [Ptr], Reg"
+x86 instruction into the cache.  The macro has a little bit of intelligence,
+in that if the "Reg" value represents EAX, then it will generate a 5-byte
+MOV using opcode 0xa3.  For other registers, it will generate the larger
+6-byte MOV using opcode 0x8a.  Other macros encode the "mod/rm/reg" byte,
+and others can be used to create forward branches via a fixup mechanism
+where the branch offset is written by a macro used to mark the
+branch destination.
+
+<p>Within jitted code, a custom calling convention is used.  The
+RunTranslatedCode() wrapper preserves ESI, and EDI across calls into
+the JIT cache.  Thus, jitted code can use the x86 callee-saved registers
+(EAX, ECX, EDX) along with ESI and EDI without having to explicitly save
+and restore them.  To return back from the JIT cache to C/C++ code, simply
+load Cpu.GPRs[R15] with the address of the next ARM/Thumb instruction
+to execute, and execute an x86 "RET" opcode.
+
+<p>Code within the JIT cache can safely call C/C++ helper routines
+directly:  no special calling rules exist.
+
+ <h3>Interesting Problems</h3>
+   <h4>Raising a synchronous interrupt</h4>
+Synchronous interrupts are ones that are raised directly as a side-effect
+of executing ARM/Thumb code.  Examples include:  the SWI (software interrupt)
+instruction, faults reported by the emulated MMU, and attempt to execute an
+illegal ARM/Thumb instruction.  The ARM processor defines a fixed-format
+interrupt table beginning either at address 0 or 0xffff0000 (a bit within the
+processor indicates which of those).  So whenever jitted code wishes to
+raise a synchronous interrupt, it simply simulates a "jump" to the appropriate
+offset within the table, after setting up the ARM registers appropriately
+to the exeception.
+
+<p>To simplify setting up of the ARM registers, several helper routines
+are available:  CpuRaise...Exception() update the ARM registers in
+preparation for an exception dispatch.  For example,
+CpuRaiseUndefinedException() copies the ARM PSR to the ARM SPSR, sets the
+ARM PSR mode to UndefinedMode, clears the ThumbMode bit, disables IRQ
+interrupts, sets R14 to the current instruction pointer, and sets R15
+to point to the correct slot in the interrupt table.  The return value from
+CpuRaise...Exception() is the address of the jitted code corresponding to
+the interrupt handler, or NULL if the interrupt handler hasn't been jitted
+already.
+
+<p>Each of the CpuRaise...Exception() functions have an equivalent
+PlaceRaise...Exception() helper which generates a call to the CpuRaise...()
+function, and generates the code to check the return value and either
+do an x86 JMP to the jitted ISR, or an x86 RET back to the CpuSimulate()
+loop.
+
+   <h4>Detecting an asynchronous interrupt (and why FIQ isn't used)</h4>
+Asynchronous interrupts are raised by Win32 worker threads in response to
+external events.  For instance, the PWMTimer device is configured by
+the WinCE kernel to raise an IRQ interrupt every 1ms.  This is implemented
+in the emulator via a worker thread which blocks on an event HANDLE with
+WaitForSingleObject(), and the HANDLE is set and reset every 1ms by the NT
+kernel (via CreateWaitableTimer()).  Each time WaitForSingleObject() returns,
+the worker thread must notify the "main" emulator thread running jitted
+ARM/Thumb code that an IRQ interrupt is pending, and that the thread must
+simulate a jump to the IRQ interrupt vector.
+
+<p>FIQ interrupts are not supported by the emulator.  Each of the 32 top-level
+interrupts on the ARM processor can be programmed by the OS to generate either
+an IRQ or FIQ (Fast Interrupt Request).  The difference between the two is
+the number of registers that are bank-switched in the transition into IRQ
+or FIQ mode.  WinCE programs all interrupts to be raised as IRQs, so to
+reduce the overhead of emulating interrupts in the emulator, only IRQs are
+supported.  Any attempt to program an interrupt to raise an FIQ will trigger
+an "Internal Error" within the emulator.  For the remainder of this section,
+IRQ interrupts will be described, but the techniques can be applied to
+both IRQ and FIQ if future versions of the emulator support both.
+
+<p>The emulator supports async IRQ interrupts via a polling mechanism.  The
+emulator periodically calls a helper function, "InterruptCheck".  If no
+interrupt is pending, this helper contains just an x86 "RET" instruction and
+is therefore a no-op.  Otherwise, it contain the code required to simulate
+an interrupt delivery.
+
+<p>On ARM hardware, IRQ interrupts are raised at the boundaries between
+instructions:  unless IRQs are disabled in the current PSR, an IRQ can be
+delivered between any pair of instructions.  Because the act of polling the
+global (Cpu.IRQInterruptPending is the name of the variable) is expensive
+(5 x86 instructions in the "no interrupt pending" codepath), we don't want
+to poll too frequently.  So IRQ interrupt polling is performed by the
+emulator only in limited circumstances:
+<ol>
+  <li>At basic block boundaries.  This ensures that interrupts are polled
+      no further apart than every 100 ARM instructions... the size of the
+      JIT's lookahead.</li>
+  <li>At backward branches.  This ensures that interrupts are polled inside
+      any loops, so an infinite loop cannot delay interrupt delivery
+      forever.</li>
+</ol>
+
+   <h4>Idle detection</h4>
+On the SMDK2410, the kernel's idle loop executes a tight
+"while(!fInterruptFlag);" loop in kernelmode, with interrupts enabled.
+fInterruptFlag is set by the IRQ interrupt handler next time it runs.
+
+<p>If this tight "while" loop is jitted and allowed to run as x86 code, it
+turns into essentially a tight x86 polling loop that checks
+WinCE's fInterruptFlag and polls for IRQ async interrupts pending.  In other
+words, it uses 100% of the host machine's CPU whenever WinCE goes idle.
+
+<p>To avoid this, the JIT's IR-level optimizer recognises the sequence of
+instructions that comprise "while(!fInterruptFlag);" and generates a
+specialized sequence of x86 instructions (by replacing the backward branch's
+Decoded's function pointer from PlaceBranch to PlaceIdleLoop).  The code-gen
+from PlaceIdleLoop() calls Win32 WaitForSingleObject(hIdleEvent) then
+emits the "standard" PlaceBranch() code.  In other words, each time
+the WinCE while() loop iterates, the emulator calls
+WaitForSingleObject(hIdleEvent) to block.  Whenever an emulator thread
+wishes to raise an IRQ, it sets Cpu.IRQInterruptPending=1 then calls
+SetEvent(hIdleEvent).  Those two operations indicate that the jitted code
+thread must jump to the IRQ handler next time it polls, and the SetEvent()
+call wakes the thread up in case it is blocked in its idle loop.  This
+strategy allows the emulator's Win32 process to go idle whenever WinCE
+goes idle.
+
+   <h4>Direct call/jump</h4>
+If the destination of a call/jump has already been jitted, then at jit-time
+the jit can translate the call/jmp into a direct x86 JMP to the jitted
+equivalent of the destination address.
+
+<p>If the destination hasn't already been jitted, then the JIT must generate
+code which performs the expensive red-black tree search to determine if the
+destination has been jitted as a result of some other code being executed).
+If so, then the generated code self-modifies, rewriting itself so the next
+time it is executed, it jumps directly to the x86 destination.  If the
+destination still hasn't been jitted, then the code-gen executes a RET to
+return back to CpuSimulate() to JIT it.  ie.
+
+<p>Case 1: direct jump and destination has already been jitted
+<pre>
+    jmp JITTEDDestination
+</pre>
+
+<p>Case 2: direct jump and destination hasn't been jitted - original code
+<pre>
+    mov ecx, ARMDestination
+    call BranchHelper
+</pre>
+The BranchHelper does the red-black tree lookup, and if successful,
+uses its x86 return address as the base pointer for modifying the
+jitted code.  The "mov ecx, ARMDestination" is replaced by
+"jmp JITTEDDestination".  If the code hasn't been jitted, then BranchHelper
+sets Cpu.GPRs[R15] to ARMDestination, pops the return address from the
+x86 stack, then executes a RET to return back to CpuSimulate().
+
+   <h4>Indirect call/jump</h4>
+Indirect call/jump in ARM/Thumb can be very expensive:  jitted code must
+compute the ARM/Thumb destination address, then search the ENTRYPOINT
+red-black tree to determine if the destination has been jitted or not.
+This operation takes hundreds to thounsands of x86 instructions to complete.
+
+<p>However, for function returns, the indirect branch's destination can
+be predicted accurately nearly all the time (sometimes hand-written
+assembly code can modify the return-address register to "return" to
+somewhere other than the caller, for example).  The JIT makes use of this
+call/return interaction and attempts to avoid red-black tree lookups by
+introducing a "callstack predictor".  This datastructure is a stack
+of pairs of addresses:  predicted ARM/Thumb return address, and the x86
+jitted equivalent of that address.  Each "call" instruction pushes a pair
+of values onto the predictor stack (stack overflows are ignored), and
+each "return" pops a pair of values from the stack.  The "return" then
+compares the predicted ARM/Thumb return address against the actual address:
+if they match, then the "return" can simply do an x86 JMP to the predicted
+x86 return address.  If they don't match, then the "return" must make the
+expensive red-black tree search.
+
+<p>The "callstack predictor" is implemented as "STACKPAIR ShadowStack[256]"
+in CPUs\ARM\ARMCpu.cpp.  Is is interesting to note that modern CPUs such as the
+Pentium IV use a similar call/return predictor internally, to allow
+prefetch and speculative execution from the return address, before the RET
+instruction itself has been executed.
+
+<p>Other "boring" indirect jump instructions also attempt to avoid the
+expensive red-black tree lookup:  each indirect ARM/Thumb jump instruction's
+code-gen includes a pair of addresses:  the last ARM/Thumb destination
+address and its x86 jitted address.  This allows indirect jumps which
+are executed multiple times, often to the same destination address each time
+to "predict" the destination address and jump directly to the jitted
+destination without the overhead of a red-black tree lookup.  This is
+particularly useful for indirect calls such as cross-DLL function calls
+and C++ vtable calls (ie. one indirect call may call the same COM object's
+AddRef() method multiple times in a row).  See ARMCpu.cpp's
+R15ModifiedHelper() for details on this cache.
+
+
+   <h4>Coprocessors</h4>
+The ARM instruction set is extensible by OEMs who build ARM processes via
+a coprocessor interface.  Up to 16 coprocessors may be defined, and
+three ARM opcodes (MCR, MRC, and CDP) move data from ARM registers to and
+from the coprocessor, and initiate coprocessor operations.
+
+<p>Several coprocessors are predefined:  the ARM MMU is coprocessor 15,
+and VFP instructions are coprocessors 10 and 11.  A permission mask in
+the MMU can restrict access to specific coprocessors such that usermode code
+cannot access them.  This is important, or else usermode code could disable
+the MMU or install its own page table!
+
+<p>A simple implementation might jit each MCR/MRC/CDP instruction as an x86
+CALL to the appropriate coprocessor, but each coprocessor would then have to
+decode the ARM instruction to determine the registers and coprocessor
+operation... inefficient.
+
+<p>Since VFP (Vector Floating Point) instructions are implemented as a
+coprocessor, it is important that the JIT be able to inline into the JIT
+cache code-gen specific to each coprocessor and coprocessor operation.
+Therefore, each coprocessor is implemented as three functions which
+generate code into the JIT cache, so that instruction decoding is done
+at jit-time, and run-time can be as efficient as possible.
+
+   <h4>Processor Mode Switches</h4>
+ARM processor mode changes are simple and elegant when implemented in silicon:
+whenever the 5 mode bits in the CPSR are changed, a different set of registers
+are bank-switched into the GPR list.  This is not easy to efficiently replicate
+in software.  There are two options:
+<ol>
+  <li>Whenever the JIT wishes to access a CPU register, it must indirect
+      through a lookup table based on the current PSR's mode.</li>
+  <li>Whenever the current PSR's mode bits are changed, the bank switch
+      is accomplished by physically copying register contents out and into
+      the array of 16 GPRs</li>
+</ol>
+Since mode switching is relatively rare, option #2 was deemed least expensive.
+Whenever the Cpu.CPSR.Bits.Mode value is changed, the BankSwitch() function
+must be called.  It performs a sequence of memcpy() calls to swap the
+current mode's registers out of the GPRs array and swap in the new mode's
+registers.
+
+   <h4>Handling R15</h4>
+On ARM, reads from R15 do not return the current instruction pointer:  instead,
+they return the current instruction pointer plus a constant, depending on
+several factors, such as ARM vs Thumb mode.  The constant originally
+represented the size of the ARM processor's prefetch queue (8 bytes, two
+ARM instructions), but now the constant is defined by the ARM architecture
+regardless of the actual prefetch queue size used by the hardware.
+
+<p>Writes to R15 are "jump" instructions:  the processor begins execution
+at the new address just written into R15, with no adjustments.
+
+<p>Rather than keeping the value in Cpu.GPRs[15] up to date at each
+ARM/Thumb instruction boundary, the emulator largely ignores Cpu.GPRs[R15].
+Instead, reads from R15 are translated into loads of a 32-bit constant
+value, computed at jit-time.  Writes to R15 write to Cpu.GPR[15], and
+CpuSimulate() uses that value to determine what to JIT next.
+
+ie. if address 0x10 contained "MOV R0, R15", the JIT would translate it to:
+<pre>
+    MOV EAX, 0x18   ; load EAX with the value of R15+8, the prefetch queue size
+    MOV DWORD PTR Cpu.GPRs[0], EAX ; store the value to Cpu.GPRs[0], r0
+</pre>
+
+   <h4>LDM/STM</h4>
+The LDM and STM instructions load and store a list of registers to/from
+memory.  The opcode contains a 16-bit bitfield listing the registers to
+operate on.  So in the worst case, a single LDM could load 16 registers from
+16 contiguous addresses (a handy way to return from an ISR).  A naive
+implementation could therefore make 16 calls to the MMU emulator.
+
+<p>To avoid this, the JIT generates code to compute the first and last address
+to be accessed, then calls the MMU to look up the first address.  If
+the first and last addresses are within the same 1k page (ie.
+(addr1 & ~3ff) == (addr2 & ~3ff)) then there is no need to make a second
+call to the MMU for addr2:  the minimum page size for ARM is 1k and both
+addresses are within that same 1k page.
+
+<p>If the jitted code must make a second MMU call, then things get tricky:
+although addr1 and addr2 represent two address no more than 16*4 bytes
+apart, those are WinCE virtual addresses.  If addr1 and addr2 are on
+separate WinCE pages, then they may map to two physical WinCE pages that
+are not contiguous.  This means that there will be a discontinuity in
+WinCE physical addresses (which also means a discontinuity in Win32 virtual
+addresses) while in the middle of loading/storing ARM registers.
+
+<p>To further complicate things, an LDM or STM may touch a memory-mapped
+I/O device, adding even more code-paths to deal with.  Rather than trying
+to generate optimal code for all possibilities into the JIT cache (which
+would be *very* large, the JIT inlines frequently-used versions, and
+generates calls to C-language helpers for the rarer cases.  The following
+are inlined:
+<ul>
+  <li>LDM/STM within the same 1k page, to memory</li>
+  <li>LDM/STM spanning two pages, to memory</li>
+</ul>
+See PlaceBlockDataTransfer() in ARMCpu.cpp for the complete details.
+
+   <h4>ARM vs. Thumb</h4>
+The CPSR contains a bit indicating whether the processor is in ARM or
+Thumb mode.  This primarily affects the instruction decoder.
+
+<p>Mode switches from ARM to Thumb are made by setting the low bit in the
+destination address.  Switches back are made via the "BX" instruction.
+
+<p>The emulator normally stores the ARM/Thumb instruction address in R15
+with the low bit clear.
+
+<p>The ENTRYPOINT structures are separate for ARM and Thumb modes.  This
+must be done in case one region of memory is jitted in ARM mode once, and
+Thumb mode the second time, or vice versa.  In Internetworked code,
+Thumb and ARM functions are intermingled in a single binary, and the
+100 instruction lookahead is bound to inadvertently scan too far ahead.
+This is also a small risk of "punning", where a sequence of bytes can be
+valid ARM opcodes and also valid Thumb opcodes.  In practice, punning hasn't
+yet been seen in the emulator, but it may happen.
+
+   <h4>Jumps to "bad" ARM addresses</h4>
+If the instruction decoder calls the MMU and the MMU reports a mapping
+error (such as page-not-present), the instruction decoder stops.  It is
+important for the JIT to not cache failures in the lookahead:  pages are
+frequently demand-paged in if they aren't currently present in the page
+table.  There is one exception:  WinCE uses jumps to addresses above
+0xf0000000 as special signals:  they always raise an Abort Prefetch
+exception.  So if the decoder detects an MMU error and the destination
+address is 0xf0000000 or higher, the decoder does cache the failure
+by creating a Decoded structure which will emit code to raise the
+Abort Data exception when executed.
+
+<p>So the instruction decoder must simulate Abort Prefetch exceptions
+only if the *first* instruction to be decoded triggers an MMU
+exception.  Rather than generating code to raise the exception, the
+JIT just simulates the jump to the exception handler directly.
+
+   <h4>Alignment</h4>
+A key difference between WinCE/PocketPC on x86 vs ARM is that the ARM
+versions raise alignment exceptions if an application attempts to dereference
+an unaligned pointer (one where the pointer value modulo the datatype's size
+is nonzero).  Alignment exceptions are therefore a class of problems
+not caught be testing on the Connectix emulator, especially for code
+ported from Win32 (through not from Win64, which also raises alignment
+exceptions).
+
+<p>To support raising alignment exceptions in ARM code run on x86, the JIT
+must insert run-time alignment checks into the jitted code.  ARM actually
+supports both raising alignment exceptions and masking them (with well-defined
+behavior for load/store instructions with misaligned data), controlled by
+a bit within the MMU's configuration.
+
+<p>The Device Emulator supports both modes:  alignment faults masked and
+alignment faults raised.  Search for "Mmu.ControlRegister.Bits.A" in
+ARMCpu.cpp to see how misaligned accesses are handled.  The JIT also
+tries to optimize out alignment checks where possible.  Currently, it
+does so only for loads and stores to "[R15+#Imm]", since the R15 value
+is known at JIT-time, the full 32-bit offset is known at JIT-time and can
+be statically determined not to cause an alignment fault.
+
+
+ <h3>Code Generator</h3>
+   <h4>Macros</h4>
+See place.h for the full list of Emit*() macros used to generate x86
+machine code.  They all assume that a variable named CodeLocation points
+to the place to generate new code, and they update CodeLocation to point
+past the newly-generated code when they're done.
+
+<p>By convention, after each Emit*() macro, write a comment that shows the
+expected x86 instruction you'd see in the VS debugger.  These have proven
+useful when debugging JIT bugs involving mis-typed Emit*() macros, as well
+as for making it easier to search ARMCpu.cpp to find code that emits a
+particular x86 instruction.  ie.
+<pre>
+    Emit8(0xff); EmitModRmReg(3,EAX_Reg,4);			// JMP EAX
+</pre>
+
+<p>Forward branches are handled via a fixup mechanism.  Here is how to
+code a forward branch:
+<pre>
+    unsigned __int8* LabelName;  // create a temp variable that points to
+                                 // the branch opcode itself.
+
+    Emit_JZ(LabelName);          // this emits a 0x74 0x00 pair ("JZ +0") into
+                                 // CodeLocation, and sets LabelName=CodeLocation
+    ...
+    FixupLabel(LabelName);       // this modifies *LabelName to be the correct
+                                 // one-byte offset such that the JZ opcode
+                                 // will branch here
+</pre>
+Similarly, the Emit_JZ32(LabelName) macro will generate a JZ instruction that
+supports a full 32-bit relative offset, for cases where the 8-byte offset is
+too small.  The FixupLabelFar(LabelName) macro is used to backpatch the
+Emit_JxxFar() macros.
+
+<p>Register names are EAX_Reg, ECX_Reg, ESI_Reg, etc.  The values of these
+constants are the values Intel uses when encoding the "r/m" and "reg" fields
+in opcodes.  So "Emit_MOV_Reg_Reg(EAX_Reg, ECX_Reg)" will generate an
+x86 "MOV EAX, ECX" opcode.
+
+<p>If a particular x86 opcode is emitted only in 1 or 2 places, use Emit8()
+to generate it.  If it is going to be used more often, add a new Emit*() macro
+to place.h and use it instead.
+
+   <h4>Debug vs. Retail</h4>
+The JIT produces the same code for both debug and retail emulator builds:
+the same optimizations are made and the same x86 opcodes are selected.
+However, if LOGGING_ENABLED is defined when the emulator is compiled,
+the JIT inserts calls to debug logging infrastructure at the start of each
+ARM/Thumb instruction.  The LogPlace() macros are what do this:  they
+are printf-like, but create the final formatting string at jit-time, then
+copy that string into the JIT cache and emit a call to the logging code
+to print it, followed by an x86 JMP over the string itself.  This obviously
+adds significant runtime overhead, but improves debuggability greatly.
+
+
+   <h4>Fixups</h4>
+In some cases, while generating code for one ARM/Thumb instruction, the
+code generator wishes to emit a forward reference to another ARM/Thumb
+instruction contained within the Decoded[] array.  Since the instruction
+hasn't yet been jitted, there is no way to know what address to store.
+
+<p>To remedy this, the Decoded structure contains a JmpFixupLocation which
+is generally NULL.  But for these cases where a forward reference is required,
+the earlier instruction writes a CodeLocation address into the destination's
+JmpFixupLocation field.  Later, after code has been generated for all
+instructions, JitApplyFixups() makes a single pass over all Decoded[]
+instructions, and for all non-NULL JmpFixupLocations, it writes
+to d->JmpFixupLocations the x86 address of the current ARM/Thumb instruction.
+
+<p>Currently, this is used only by forward direct jumps.  See PlaceBranch()
+in ARMCpu.cpp.
+
+   <h4>Register Usage</h4>
+As noted earlier in this document, jitted code is free to use EAX, ECX, EDX,
+ESI, and EFlags.  Within a single ARM/Thumb instruction, jitted code
+may also make use of global variables and stack.
+
+<p>EDI is reserved for PlaceSingleDataTransfer across ARM/Thumb instruction
+boundaries.  Within a single basic block, several SingleDataTransfers share
+state by storing it in EDI.
+
+<h2>Translation Cache</h2>
+The memory region used to store jitted code is called the "Translation Cache"
+within the emulator.  This document and others may refer to it as the "JIT
+Cache":  they are the same thing.
+
+<p>The Translation Cache works as follows:
+<ul>
+  <li>Allocations are appended on the end:  no individual allocations
+      are freed:  instead, the entire cache can be flushed in one
+      bulk operation.</li>
+  <li>The Translation Cache is demand-committed.  It begins with a
+      fairly large reserve size (32mb) and a fairly small commit size
+      (256k).  Each time the JIT needs to translate a run of code, it
+      allocates one large chunk (currently 32k) from the Translation Cache.
+      It then generates code into that chunk, and releases whatever
+      fraction isn't used back to the Translation Cache.</li>
+  <li>If a chunk allocation would extend past the current commit size,
+      more memory is committed.  However, that commit may fail if the host
+      machine is running low on virtual memory.  This is acceptable: the
+      Translation Cache simply flushes itself and returns a pointer to the
+      beginning of the cache.  Since the minimum reserve size is 256k, there
+      is guaranteed space for at least 256/32 = 16 runs of code.</li>
+  <li>The amount to commit each time grows and shrinks according to a
+      heuristic based on the amount of time since the last commit.  This
+      attempts to reduce the number of VirtualAlloc calls needed to commit
+      memory without overcommitting by too much.  Essentially, if commits
+      happen frequently, the commit size doubles.  If commits happen
+      rarely, the commit size halves.  In between "frequent" and "rare",
+      the commit size remains unchanged.</li>
+</ul>
+
+<h2>Debugging Tips</h2>
+  <h3>LogInstructionStart</h3>
+In debug DeviceEmulator builds, if LOGGING_ENABLED is defined when the
+emulator is built, debug logging can be enabled and disabled via the
+LogInstructionStart global variable (defined in ARMCpu.cpp).  The variable
+is used as a comparison against the number of ARM/Thumb instructions executed:
+whenever that count is greater than or equal to LogInstructionStart, then
+register banners and instruction disassembly is logged to stdout.
+
+<p>The default value of LogInstructionStart is 0xffffffff, meaning logging
+is off.  Under a debugger, at any time, use the QuickWatch window to set
+LogInstructionStart to 0, and logging will immediately begin.  Reset it
+to 0xffffffff (-1) to disable logging.
+
+<p>When logging is enabled, the logging overhead is so large that the
+emulator may spend a significant fraction of its time logging the 1ms
+timer interrupt handler.  To avoid this, it is often handy to temporarily set
+Cpu.CPSR.IRQEnabled=0 from the QuickWatch window, disabling IRQ interrupts.
+Don't forget to re-enable it when you're done logging!
+
+  <h3>Emit8(0xcc)</h3>
+Emit8(0xcc) generates a hard-coded Int3 breakpoint into the Translation Cache.
+These are very useful for stopping the emulator when a particular code-path
+through jitted code is executed (ie. LDM to I/O space).  Once hit, you can
+"disable" one of these by copying the address of the Int3 into the clipboard,
+opening the Memory Window in VS, switching to "byte" display, pasting in the
+address, and replacing the 0xcc by 0x90, which is an x86 NOP opcode.
+
+  <h3>"Good Emulator" / "Bad Emulator"</h3>
+At the top of ARMCpu.cpp are two defines, GOOD_EMULATOR and BAD_EMULATOR.
+Both of them are commented out in the checked-in source tree.
+
+<p>If you make a change to the emulator, and the emulator stops working,
+and the bug occurs early in WinCE's boot sequence (before the GUI desktop
+paints), then you may be able to debug a "good" build of the emulator
+side-by-side with your "bad" build of the emulator.  Here is how:
+<ul>
+  <li>Rebuild the "good" version of the emulator with the GOOD_EMULATOR define
+      uncommented.  Build a debug flavor with LOGGING_ENABLED defined, and
+      the LogInstructionStart global initialized to zero.</li>
+  <li>Rebuild the "bad" version of the emulator with the BAD_EMULATOR define
+      uncommented.  Again, build a debug flavor with LOGGING_ENABELD defined,
+      and the LogInstructionStart global initialized to zero.</li>
+  <li>On the same Windows machine, launch the "good" emulator with the
+      command-line that would repro the "bad" emulator's bug.  It will
+      initialize, but stall and go idle just before executing the first
+      ARM/Thumb instruction.</li>
+  <li>On the same Windows machine, launch the "bad" emulator with the same
+      command-line.  Both emulators will now run in lock-step, each executing
+      one ARM/Thumb instruction, and at each instruction boundary, the
+      "bad" emulator will compare its emulated register values against the
+      values from the "good" emulator.  Any differences trigger an assert.</li>
+</ul>
+The "bad" and "good" emulators communicate via named-shared objects and
+memory, which is why they must run on the same Windows machine.
+
+<p>Unfortunately, the "bad" and "good" will diverge quickly once WinCE
+enables the timer interrupt:  the "good" and "bad" emulators depend on NT
+for timing and slight differences in the NT scheduler cause the two emulators
+to receive timer interrupts at slightly different times.  In the future,
+a way of "slaving" peripheral devices from a "bad" emulator into a "good"
+emulator, particularly the timer, would address this problem and extend
+the window of execution where the side-by-side comparison would work.
+
+
+<hr>
+</body> </html>

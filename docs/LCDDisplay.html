@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>LCD Display, Touchscreen, and Keyboard</title>
+<link rel="stylesheet" type="text/css"  href="emulator.css">
+</head>
+
+<body>
+<h1>LCD Display, Touchscreen, and Keyboard</h1>
+
+<h2>SMDK2410 LCD</h2>
+ <h3>Hardware frame buffer</h3>
+The hardware frame buffer is fixed at a specific WinCE physical address
+by the SMDK2410 BSP:  its address is hard-coded into
+Windows CE's platform\deviceemulator\files\platform.reg's LCDPhysicalFrameBase
+value, which is 0x30100000.  The SMDK2410 video driver reads this registry
+value and calls VirtualCopy() to map it into virtual memory.  The
+frame buffer size is 0x40000 bytes.
+
+<p>This frame buffer is laid out as a 320x240x16bpp rectangle.  The
+color encoding is RGB 565, where each 16-bit color is composed of 5 bits of
+red data, 6 bits of green and 5 bits of blue.  On Windows, 16bpp is usually
+RGB 555 where the 16th bit is unused, but GDI does support 565 encoding.
+
+<p>Rather than the display device driver initialing the LCD controller
+hardware, the BSP kernel initializes the hardware from within OEMInit(),
+by calling InitDisplay() - see Windows CE's platform\DeviceEmulator\src\kernel\hal\cfw.c's
+OEMInit().  InitDisplay() writes the frame buffer's physical address into
+the LCD controller's LCDSADDR1/2/3 registers, enables the backlight, and
+enables output the the LCD screen.
+
+<p>There is no hardware acceleration on SMDK2410:  all display updates are
+implemented by WinCE software directly writing data into the frame buffer.
+While this simplifies the emulator's job, it does have a performance impact,
+since common operations such as line drawing, region fills and bitblts must
+be emulated by the ARM-to-x86 JIT.
+
+ <h3>Rendering into a Win32 DIB</h3>
+The IOLCDController class in Boards\SMDK2410\devices.cpp uses a worker Win32 thread
+to poll the emulated frame buffer 12 times per second (though this number
+can be easily changed to 24 or higher).  On each poll, the worker thread
+(IOLCDController::LCDDMAThreadProc()) copies the contents of the WinCE
+frame buffer into a Win32 Device Independent Bitmap (DIB), The copy-out
+is a simple dword-at-a-time copy, but the worker thread keeps track of
+whether the new frame differs from the previous frame:  if any DWORD differs,
+then the entire frame differs and must be refreshed into the Win32 window.
+
+<p>If the frame differs, then the LCDDMAThreadProc() calls InvalidateRect()
+on the Win32 window to force a repaint.  If the frame is unchanged, then
+no repaint is forced:  this is important if the emulator is running inside
+a Windows Terminal Server client:  we don't want to re-blt the bitmap
+12 times per second if it isn't changing.
+
+ <h3>The Win32 Window</h3>
+Much of the Win32 Window is implemented in board-independent code, in
+Boards\wininterface.cpp.  This defines an
+abstract base class, IOWinController, which derives from MappedIODevice.
+The board's LCD controller device then derives from IOWinController
+instead of from MappedIODevice.
+
+   <h4>Creation</h4>
+The "LCD Display" window is created during emulator startup.  Its size
+depends on a number of configuration options, such as the skin and video
+parameters.  It has a "File menu" in its nonclient area.
+
+   <h4>Displaying the Win32 DIB</h3>
+<p>The WM_PAINT handler for the window (in IOWinController::onWM_PAINT()) then
+either calls BitBlt() to copy the DIB onto the Windows display.
+
+<p>No thread locks are held during this refresh:  if WinCE is in the middle
+of rending to the screen when a refresh takes place, it is possible that
+part of the update will be captured, and part in the next frame, 1/12th of
+a second later.
+
+   <h4>Zoom Feature</h4>
+The File/Zoom feature simply resizes the client area of the Win32 window and
+uses stretches the DIB to fill the window.  WinCE is unaware of the larger
+window, as each WinCE pixel simply expands from 1 to 4 Win32 pixels.
+
+   <h4>Mouse Interaction</h4>
+Windows mouse button and movement is translated into touchscreen pen
+up/down/move events via the emulator's LCD window:  WM_LBUTTONDOWN,
+WM_LBUTTONUP, and WM_MOUSEMOVE messages are converted into calls to
+the ADConverter (aka the touchscreen controller).  The board's
+devices.cpp must implement handlers for these messages, since the
+touchscreen device is board-specific.
+
+   <h4>Keyboard Interaction</h4>
+Unlike the mouse, keyboard interaction is not performed via WM_KEY
+messages.  The WM_ messages do not report important keystrokes such as
+Alt-Tab.  Instead, whenever the LCD window has input focus, it enables
+a Windows low-level keyboard hook via the SetWindowsHookEx() API (see
+Boards\wininterface.cpp's IOWinController::LCDWndProc()'s WM_SETFOCUS
+handler).  The low-level keyboard hook is called for each key up and
+down event in Windows, and it has the option of allowing the key to pass
+through user32 to the application, or consuming the key itself.  If
+the key is destined to be forwarded into WinCE, the hook does so by
+communicating with the emulated keyboard controller device, then
+consuming the key event.  This way, the hook can choose whether Left-Alt
+or Right-Alt or both go to either WinCE or Win32.
+
+   <h4>ClearType in WinCE</h4>
+ClearType is supported by WinCE and PocketPC on the SMDK2410.  Its
+implementation simply chooses different algorithms for blt operations, which
+select slight variations in pixel color.
+
+<p>Since ClearType doesn't have any hardware support, it works on the
+Device Emulator.  But if the Device Emulator's Win32 Window is displayed
+on a traditional CRT, or the Window isn't positioned "just right" on an LCD,
+WinCE ClearType simply makes text look a little blurry.  ClearType is disabled
+by default in both WinCE and PocketPC, so the blur only occurs if the user
+explicitly enables ClearType.
+
+
+<h2>SMDK2410 Touchscreen</h2>
+ <h3>Pen Up/Down</h3>
+Pen up/down is detected by the SMDK2410 AD Converter as changes in resistance
+in a field surrounding the display.  The AD Converter takes care of converting
+these resistance changes into clear pen up/down events (triggering interrupts,
+setting the ADCDAT0 register to indicate pen up/down state, etc.).  The
+Device Emulator simply converts Win32 WM_LBUTTONUP and WM_LBUTTONDOWN
+messages into AD Converter pen up/down notifications.
+
+ <h3>Pen Samples</h3>
+Once the pen is down, the touchscreen device driver in WinCE enables
+"pen sampling" mode in the AD Converter, and uses the PWM Timer 3 to
+capture samples at regular (but high-frequency) intervals.  The emulator
+simulates this behavior through two components working in concert:
+<ol>
+  <li>WM_MOUSEMOVE events in the LCD window update an X/Y coordinate pair
+      in the AD Converter emulator</li>
+  <li>Timer3 interrupts capture the current AD Converter's X/Y coordinates
+      and report them to the WinCE touchscreen driver.</li>
+</ol>
+This is a fairly low-fidelity interface:  Win32 user32 coalesces WM_MOUSEMOVE
+messages together.  If the user moves the mouse a little, a WM_MOUSEMOVE
+is enqueued, but if the user moves the mouse again before the WndProc has
+a chance to process it, user32 doesn't enqueue a new WM_MOUSEMOVE:  it instead
+overwrites the existing one with new coordinates.  In other words, if the
+use traces a smooth arc with the mouse, and the Windows machine is fairly
+compute-bound, the emulator may only see a straight line between the
+endpoints.
+
+  <h3>Resizable Display</h3>
+The SMDK2410 board includes a fixed 320x240 LCD display, and the original
+WinCE BSP for SMDK2410 was hard-coded to use that 320x240 display.  However,
+the SMDK2410's display hardware is capable of driving a number of display
+configurations, upto 2048x2048.
+
+<p>This fixed display is inconvenient from a user's perspective, as many
+classes of device have screens larger or smaller than 320x240, such as
+WebPad (640x480) or SmartPhone (176x220).
+
+<p>To address this, the DeviceEmulator and a modified SMDK2410 BSP work
+together to allow a user-specified LCD display size and color depth.  The
+key to this is the BOOT_ARGS structure shared between the emulator and
+BSP:  it is created by the emulator at boot, and is stored at a fixed
+address inside WinCE's memory (at the top end of the 1mb of RAM reserved
+by the SMDK2410 BSP for the video frame buffer).  This structure was
+originally defined for x86 BSPs and is used by Connectix to configure the
+x86 WinCE display - the DeviceEmulator just co-opted existing concepts.  It
+includes fields which specify the configuration the emulator would like the
+OS to set up the LCD controller in.  See
+Boards\SMDK2410\Board.cpp's BoardPowerOn() for the
+definition of BOOT_ARGS and how it is initialized.  See
+Windows CE's platform\deviceemulator\src\kernel\hal\cfw.c's InitDisplay() to see
+how the BOOT_ARGS are read in and used to drive configuration of the LCD
+controller.  Windows CE's platform\deviceemulator\src\drivers\display\s3c2410lcd\s3c2410disp.cpp's InitializeHardware() was modified to read the LCD display size
+back from the LCD controller's register.  Previously, it was hard-coded
+to 320x240x16, like InitDisplay() was.
+
+<p>The emulator's LCD window then resizes itself according to values the
+BSP writes into the LCD controller's registers (remember, the LCD controller
+hardware on SMDK2410 is configurable upto 2048x2048 at 1-32 bits per pixel).
+
+<p>Note that WinCE does not support reconfiguring the display settings
+at run-time, so the LCD window needs to size itself correctly at startup,
+but never again.
+
+<h2>SMDK2410 Keyboard Controller</h2>
+The IOSPI1 class in Boards\SMDK2410\devices.cpp implements the SMDK2410 keyboard
+controller.  It contains a small keyboard queue, filled by the
+low-level keyboard hook proc, and whenever a key is enqueued, it
+raises an interrupt.  Key up and down are enqueued separately:  a 1-bit flag
+is associated with each key value, 0 for keydown, 1 for keyup.
+
+<p>The VKtoScan.c file contains the mapping from Win32 Virtual Key
+values to SMDK2410 keyboard scan codes.  The WinCE keyboard device driver
+then interprets the keyboard scan code and converts it into a WinCE Virtual
+Key value.  VKtoScan.c is machine-generated, by the ScanToVK tool.  That
+tool contains a copy of the WinCE driver's scancode-to-VKey mapping
+table, which the tool inverts into a VKey-to-scancode table which it emits
+into VKtoScan.c.
+
+<hr>
+</body> </html>

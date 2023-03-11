@@ -1,0 +1,191 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>JIT Sample</title>
+<link rel="stylesheet" type="text/css"  href="emulator.css">
+</head>
+
+<body>
+<h1>JIT Sample</h1>
+
+This sample walks through a typical "STR" opcode and how the JIT translates
+it into x86 machine code.  The JIT's disassembler reports the
+instruction as "STR  Rd=10, Rn=2 Operand2=188, pre-indexed, up, writeback",
+which the ARM disassembler would decode as "str r10, [r2!, r8 SHL 3]".
+
+<h2>Debug logging</h2>
+This code is generated only if LOGGING_ENABLED is defined:
+<pre>
+0AACCF73 BA 04 8A 07 80   mov         edx,80078A04h                ; load edx with the ARM instruction's address
+0AACCF78 E8 5B FA 95 F5   call        DisplayARMBanner (42C9D8h)   ; edx is an argument to this helper
+0AACCF7D EB 14            jmp         0AACCF93                     ; jump over the string literal
+0AACCF7F-0AACCF92         "                   "
+0AACCF93 B9 7F CF AC 0A   mov         ecx,0AACCF7Fh                ; ecx = ptr to string literal
+0AACCF98 E8 6C F1 95 F5   call        JitLoggingHelper (42C109h)   ; log the string in ecx
+0AACCF9D EB 3B            jmp         0AACCFDA                     ; jump over the string literal
+0AACCF9F-0AACCFD9         "STR  Rd=10, Rn=2 Operand2=188, pre-indexed, up, writeback\r\n"
+0AACCFDA B9 9F CF AC 0A   mov         ecx,0AACCF9Fh                ; ecx = ptr to string literal
+0AACCFDF E8 25 F1 95 F5   call        JitLoggingHelper (42C109h)   ; log the string in ecx
+</pre>
+
+<h2>PlaceSingleDataTransferOffset()</h2>
+This routine is responsible for generating code to compute the effective
+address for an LDR or STR instruction.  It uses d->Rn and d->Operand2, along
+with d->U.  It first calls PlaceDecodedShift() to handle Operand2.
+
+<h3>PlaceDecodedShift()</h3>
+This emulates the behavior encoded in the Operand2 value of 0x188.  It
+stores its result in edx.
+<pre>
+0AACCFE4 8B 15 E0 9F E2 09 mov         edx,dword ptr ds:[9E29FE0h] ; edx = Cpu.GPRs[R8]
+0AACCFEA C1 E2 03         shl         edx,3                        ; shift it left 3 bits
+</pre>
+
+Next, it loads the Rn register into ecx, and depending on d->U, either
+generates an "ADD" or "SUB" to compute the final effective address into
+ecx.
+<pre>
+0AACCFED 8B 0D C8 9F E2 09 mov         ecx,dword ptr ds:[9E29FC8h] ; ecx = Cpu.GPRs[R2]
+0AACCFF3 03 CA            add         ecx,edx                      ; so ecx = Cpu.GPRs[R8] << 3 + Cpu.GPRs[R2]
+</pre>
+
+Next, PlaceSingleDataTransfer() determines that the effective address will
+require an alignment check and/or be written back to update the Rn register.
+In either case case, it needs to preserve the effective address across a call
+to C/C++ code, so it copies the value into esi.
+<pre>
+0AACCFF5 8B F1            mov         esi,ecx 
+</pre>
+
+Now, call the MMU to map the WinCE virtual address into a Win32 virtual.
+Note that the value in edx is a pointer to the TLB index cache embedded
+in the code-gen for this instruction.  However, the TLB index cache is
+actually *after* the current instruction pointer, so the offset will be fixed
+up a little later.  The arguments to the MMU call are:  ecx = WinCE virtual
+address, edx = &TLBIndexCache.  The return value is a HostEffectiveAddress
+pointer in eax.
+<pre>
+0AACCFF7 BA 00 00 00 00   mov         edx,0                         ; mov edx, &TLBIndexCache
+0AACCFFC E8 23 F9 95 F5   call        MMU::MMUMap<4>::MapGuestVirtualToHost (42C924h) 
+</pre>
+
+Next, check if the MapGuestVirtualToHost() call returned 0 or not.  If it
+didn't, then check the effective address for alignment.  Note that the
+"je" and "jne" instructions are forward branches, so their offsets are not
+yet known.  They'll be fixed up a little later.  Also, note that the alignment
+check tested the value in eax, which is the HostEffectiveAddress.  The
+emulator assumes that the host RAM/ROM/Flash memory is at least 8-byte aligned,
+so alignment checks against the Win32 address are equivalent to checks
+against the WinCE address.
+<pre>
+0AACD001 85 C0            test        eax,eax                      ; is HostEffectiveAddress == 0
+0AACD003 74 00            je          AbortExceptionOrIO           ; branch if so - abort exception or IO
+0AACD005 A9 03 00 00 00   test        eax,3                        ; are the low two bits nonzero?
+0AACD00A 75 00            jne         RaiseAlignmentException      ; branch if so - unaligned pointer
+</pre>
+
+Now that we're sure that the MMU didn't report an error and alignment is OK,
+it is safe to perform the writeback.
+<pre>
+0AACD00C 89 35 C8 9F E2 09 mov         dword ptr ds:[9E29FC8h],esi ; Cpu.GPRs[R2] = esi
+</pre>
+
+OK, now lets actually do the store and jump to the end of the code-gen.
+<pre>
+0AACD012 8B 0D E8 9F E2 09 mov         ecx,dword ptr ds:[9E29FE8h] ; ecx = Cpu.GPRs[R10]
+0AACD018 89 08            mov         dword ptr [eax],ecx          ; *(DWORD*)HostEffectiveAddress = ecx
+0AACD01A EB 00            jmp         StoreWordDone
+</pre>
+
+From here on out are lesser-used codepaths.  First is AbortExceptionOrIO:
+<pre>
+AbortExceptionOrIO:
+0AACD01C A1 30 CD E2 09   mov         eax,dword ptr ds:[09E2CD30h] ; eax = Mmu.IOAddress
+0AACD021 85 C0            test        eax,eax                      ; is the IOAddress zero?
+0AACD023 74 00            je          AbortException               ; branch if so - the MMU reported an abort
+</pre>
+
+It isn't an abort exception, so this must be a memory-mapped I/O address.
+Again, we're past the point where exceptions may be raised, so it is safe
+to do the writeback now.
+
+<pre>
+0AACD025 89 35 C8 9F E2 09 mov         dword ptr ds:[9E29FC8h],esi ; Cpu.GPRs[R2] = esi
+</pre>
+
+Now perform alignment checking:
+<pre>
+0AACD02B A9 03 00 00 00   test        eax,3                        ; are the low two bits of Mmu.IOAddress nonzero?
+0AACD030 75 00            jne         RaiseAlignmentException2     ; branch if so - alignment exception
+</pre>
+
+Finally, do the memory-mapped IO and jump to the end of the code-gen.
+IOStoreWord() takes one argument in ecx, the 32-bit value to store.  It
+also reads from Mmu.IOAddress directly, saving us from having to generate
+an instruction here to load the value into a register.
+<pre>
+0AACD032 8B 0D E8 9F E2 09 mov         ecx,dword ptr ds:[9E29FE8h] ; ecx = Cpu.GPRs[R10]
+0AACD038 E8 59 F0 95 F5   call        IOWriteWord (42C096h) 
+0AACD03D EB 00            jmp         StoreWordDone2 
+</pre>
+
+Now begin the error-handling code-paths:
+<pre>
+AbortException:
+0AACD03F B9 04 8A 07 80   mov         ecx,80078A04h                ; ecx = address of this ARM instruction
+0AACD044 E9 F0 FC 95 F5   jmp         RaiseAbortDataExceptionHelper (42CD39h)
+</pre>
+
+And emit the 1-byte TLBIndexCache value.  The "mov edx, 0" above is now
+fixed up to be "mov edx, 0AACD049h"
+<pre>
+0AACD049 00
+</pre>
+
+Now, the alignment-exception code-paths:
+<pre>
+RaiseAlignmentException:
+RaiseAlignmentException2:
+0AACD04A BE 04 8A 07 80   mov         esi,80078A04h                 ; esi = address of this ARM instruction
+0AACD04F E8 C2 F7 95 F5   call        MMU::RaiseAlignmentException (42C816h) 
+0AACD054 B9 04 8A 07 80   mov         ecx,80078A04h                 ; ecx = address of this ARM instruction
+0AACD059 E9 DB FC 95 F5   jmp         RaiseAbortDataExceptionHelper (42CD39h) 
+</pre>
+
+And finally, the labels pointing to the end of the code-gen for this
+instruction.  We arrive here only if the STR completes without raising
+any exceptions.
+<pre>
+StoreWordDone:
+StoreWordDone2:
+</pre>
+
+<hr>
+<h2>Best-case code-path</h2>
+The code-gen for LDR/STR is optimized for memory accesses with proper
+alignment.  Conditional branches are all forward in direction, since the
+Pentium III and Pentium IV predict those as "not-taken".
+
+<p>Here is the code-path through the lengthy sequence of instructions
+required to handle all possible eventualities.
+<pre>
+0AACCFE4 8B 15 E0 9F E2 09 mov         edx,dword ptr ds:[9E29FE0h] ; edx = Cpu.GPRs[R8]
+0AACCFEA C1 E2 03         shl         edx,3                        ; shift it left 3 bits
+0AACCFED 8B 0D C8 9F E2 09 mov         ecx,dword ptr ds:[9E29FC8h] ; ecx = Cpu.GPRs[R2]
+0AACCFF3 03 CA            add         ecx,edx                      ; so ecx = Cpu.GPRs[R8] << 3 + Cpu.GPRs[R2]
+0AACCFF5 8B F1            mov         esi,ecx 
+0AACCFF7 BA 00 00 00 00   mov         edx,0AACD049h                ; mov edx, &TLBIndexCache
+0AACCFFC E8 23 F9 95 F5   call        MMU::MMUMap<4>::MapGuestVirtualToHost (42C924h) 
+0AACD001 85 C0            test        eax,eax                      ; is HostEffectiveAddress == 0
+0AACD003 74 00            je          AbortExceptionOrIO           ; branch not taken - not IO or abort
+0AACD005 A9 03 00 00 00   test        eax,3                        ; are the low two bits nonzero?
+0AACD00A 75 00            jne         RaiseAlignmentException      ; branch not take: address is aligned
+0AACD00C 89 35 C8 9F E2 09 mov         dword ptr ds:[9E29FC8h],esi ; Cpu.GPRs[R2] = esi
+0AACD012 8B 0D E8 9F E2 09 mov         ecx,dword ptr ds:[9E29FE8h] ; ecx = Cpu.GPRs[R10]
+0AACD018 89 08            mov         dword ptr [eax],ecx          ; *(DWORD*)HostEffectiveAddress = ecx
+0AACD01A EB 00            jmp         StoreWordDone
+...
+0AACD05E StoreWordDone:
+</pre>
+
+<hr>
+</body> </html>

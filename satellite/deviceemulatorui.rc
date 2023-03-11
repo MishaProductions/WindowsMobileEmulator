@@ -1,0 +1,68 @@
+/*++
+
+ Copyright (c) 2006 Microsoft Corporation.  All rights reserved.
+
+ The use and distribution terms for this software are contained in the file
+ named license.rtf, which can be found in the root of this distribution.
+ By using this software in any fashion, you are agreeing to be bound by the
+ terms of this license.
+
+ You must not remove this notice, or any other, from this software.
+
+--*/
+
+#include "winres.h"
+#include "winver.h"
+#include "verstamp.h"
+
+#define VER_FILETYPE                                    VFT_DLL
+#define VER_FILESUBTYPE                         VFT2_UNKNOWN
+#define VER_FILEDESCRIPTION_STR         "Device Emulator Satellite"
+#define VER_INTERNALNAME_STR            "DeviceEmulatorUI.dll\0"
+#define VER_ORIGINALFILENAME_STR                "DeviceEmulatorUI.dll\0"
+
+#include "common.ver"
+#include "resource.h"
+
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+#include "Resources.rc"
+
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

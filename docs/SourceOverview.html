@@ -1,0 +1,118 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>Source Overview</title>
+<link rel="stylesheet" type="text/css"  href="emulator.css">
+</head>
+
+<body>
+<h1>Source Overview</h1>
+
+<h2>A quick guide to the source tree</h2>
+<ul>
+  <li>Motherboard names:</li>
+  <ul>
+    <li>Samsung SMDK2410 - motherboard built by Samsung - has Samsung's ARM920 variant, 64MB RAM, LCD touchscreen, NIC, keyboard, and serial ports this board is supported by WinCE 4.2.  I added support for it to PocketPC 2003 myself.</li>
+   </ul>
+   <li>Source directories under the DeviceEmulator:</li>
+   <ul>
+     <li>Boards - contains all sources specific to motherboard emulation.  All code in this
+         directory is considered "common" code shared by each motherboard.  Some files are
+         used only by particular boards... not all files are built into all emulators.
+         Files in this directory contain #if statements to tailor behavior for
+         particular boards, based on "features".  See each board's SOURCES file for
+         the list.</li>
+     <ul>
+         <li>COMInterface.cpp - implements the COM interfaces and other hosting
+             code required for integration into Visual Studio.</li>
+         <li>Config.cpp - implements EmulatorConfiguration class, used to store
+             global configuration information.</li>
+         <li>LoadBIN_NB0.cpp - code for loading *.bin and *.nb0 files into the
+             emulator.</li>
+         <li>main.cpp - contains the WinMain and some misc. helper code</li>
+         <li>mappedio.cpp - the central dispatcher called by emulator.cpp to
+             implement memory-mapped device I/O</li>
+         <li>PCMCIADevices.cpp - implements common PCMCIA devices.  Currently,
+             only the NE2000 network card emulator is implemented.</li>
+         <li>ResourceSatellite.cpp - contains code to load the localizable
+             resource satellite DLL and retreive resources from it.</li>
+         <li>ScancodeMapping.cpp - table mapping Windows Virtual Key codes to
+             IBM AT keyboard scan codes.  Used by the skin engine, as skins
+             may specify keypresses in terms of IBM AT scan codes.</li>
+         <li>State.cpp - implements the code of save-state and restore-state.</li>
+         <li>VPCNet.cpp - wrapper on top of the Connectix Virtual Switch
+             network driver.</li>
+         <li>WinInterface.cpp - common code for displaying the Windows UI for
+             the emulator.  It is responsible for managing the Win32 window,
+             accepting keystrokes from Windows, handling menu items, and
+             communicating with the skin engine.</li>
+         <li>Boards\SMDK2410 - builds DeviceEmulator.exe</li>
+         <ul>
+           <li>Board.cpp - implements the SMDK2410 motherboard emulation
+               (RAM, Flash, etc.)</li>
+           <li>Devices.cpp - implements SMDK2410 peripheral devices and
+               the SMDK2410-specific portions of the emulator UI, as
+               part of its LCD emulator.</li>
+           <li>mappediodevices.h - defines the list of SMDK2410 peripherals</li>
+           <li>vktoscan.cpp - conversion table from Win32 Virtual Key
+               codes to SMDK2410's keyboard OEM scan codes.</li>
+         </ul>
+         </ul>
+     <li>CPUs - sources for CPU emulation, into .lib files to be linked into
+         EXEs created under the "Boards" subdirectory.  The top-level directory
+         contains code usable by any CPU emulator.</li>
+         <ul>
+           <li>entrypt.h - mapping table from "guest" addresses to x86
+               addresses of jitted code.</li>
+           <li>redblack.* - red-black tree used by the entrypoint manager.</li>
+           <li>tc.* - Translation Cache manager - it manages the memory used
+               to store jitted code.</li>
+           <li>ARM - builds the ARM-to-x86 JIT</li>
+           <ul>
+             <li>ARMCpu.cpp - the core of the ARM/Thumb JIT compiler</li>
+             <li>vfp.cpp - stub file that will eventually contain emulation of the
+                 ARM Vector Floating Point (VFP) coprocessor</li>
+             <li>MMU.cpp - implements the ARM processor's MMU, including:
+                 TLB emulation, guest virtual-to-physical address translation,
+                 and page protection.  Guest physical-to-Windows Physical
+                 address translation is performed in boards\*\board.cpp as it
+                 is specific to each motherboard.</li>
+             <li>Entrypt.cpp - implements the table of mappings from ARM/Thumb
+                 instruction addresses to their already-jitted x86 equivalents.</li>
+             <li>Debugger.cpp - partial support for eXDI debugging interface
+                 used by WinCE Platform Builder's ICE.</li>
+           </ul>
+       </ul>
+       <li>Features - common libraries of code used by one or more of the emulators,
+           but not specific to any motherboard or CPU.</li>
+           <ul>
+           <li>LibPNG - builds libpng, which is used by the skin engine to load
+               .PNG graphic files into memory.</li>
+           <li>ZLib - builds ZLib data compression routines, used by save-state/
+               restore-state to reduce the size of the state files on-disk.</li>
+           <li>Skins - the Skin engine, which loads XML skin descriptor files,
+               the bitmaps within them, manages hotspots on the skin, etc.
+               Much of this code was copied from the Connectix emulator and
+               modified to suit the DeviceEmulator's needs.</li>
+           </ul>
+       <li>Include - common include files</li>
+           <ul>
+             <li>Board.h - public interface to a motherboard emulator</li>
+             <li>Config.h - global EmulatorConfiguration object</li>
+             <li>CPU.h - public interface to the CPU emulator</li>
+             <li>Emulator.h - common global header file</li>
+             <li>Resource.h - defines the localizable resources available</li>
+             <li>Resources.rc - the localizable resources shared by all
+                 emulators</li>
+             <li>ResourceSatellite.h - access to the satellite DLL</li>
+             <li>State.h - save/restore-state</li>
+             <li>Syscall.h - used by a test configuration as the interface between the
+                 CPU and board to implement ARM callouts to x86 Win32 APIs</li>
+             <li>WinController.h - Win32 UI</li>
+             <li>XMLSkin.h - skin interface</li>
+           </ul>
+       <li>Satellite - builds 1033\DeviceEmulatorUI.dll, the localizable satellite DLL</li>
+     </ul>
+   </ul>
+       
+<hr>
+</body> </html>

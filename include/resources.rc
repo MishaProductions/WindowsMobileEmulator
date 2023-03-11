@@ -1,0 +1,358 @@
+/*++
+
+ Copyright (c) 2006 Microsoft Corporation.  All rights reserved.
+
+ The use and distribution terms for this software are contained in the file
+ named license.rtf, which can be found in the root of this distribution.
+ By using this software in any fashion, you are agreeing to be bound by the
+ terms of this license.
+
+ You must not remove this notice, or any other, from this software.
+
+--*/
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+IDC_EMULATORICON ICON DISCARDABLE "Emulator.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "&Save State and Exit",        ID_FILE_SAVESTATE
+        MENUITEM "C&lear Saved State",          ID_FILE_CLEARSAVESTATE
+        POPUP "&Reset"
+        BEGIN
+		MENUITEM "&Soft"                ID_FILE_RESET_SOFT
+                MENUITEM "&Hard"                ID_FILE_RESET_HARD
+        END
+        MENUITEM "&Configure..."                ID_FILE_CONFIGURE
+        MENUITEM "E&xit",                       ID_FILE_EXIT
+    END
+
+    POPUP "F&lash"
+    BEGIN
+        MENUITEM "S&ave",                        ID_FLASH_SAVE
+    END
+
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&Contents",                     ID_HELP_CONTENTS
+	MENUITEM SEPARATOR
+        MENUITEM "&About Device Emulator",                        ID_HELP_ABOUT
+    END
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+IDD_ABOUTDIALOG DIALOGEX 0, 0, 250, 120
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About Microsoft Device Emulator"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         IDC_EMULATORICON,IDC_ABOUTICON,"Static",SS_ICON | SS_SUNKEN,10,10,32,32
+    CTEXT           "Microsoft Shared Source Device Emulator",IDC_STATIC,34,15,155,12,0
+    CTEXT           "",IDC_PRODUCTVERSION,34,27,155,12
+    CTEXT           "",IDC_COPYRIGHT_STRING,15,39,225,12
+
+    LTEXT           "",IDC_LEGALNOTICE,10,54,160,60,SS_SUNKEN
+
+    DEFPUSHBUTTON   "OK",IDOK,175,75,50,14
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE
+BEGIN
+    ID_MESSAGE_RESOURCE_EXHAUSTED "Error: System resources exhausted."
+    ID_MESSAGE_VMID_IN_USE  "Error: The current VMID is in use. Wait for the other application to exit."
+    ID_MESSAGE_INTERNAL_ERROR "Internal error"
+    ID_MESSAGE_UNABLE_TO_OPEN_SERIAL
+                            "Unable to open serial port '%1!s!'. LastError=%2!s!"
+    ID_MESSAGE_UNABLE_TO_OPEN "Error: Cannot open file '%1!s!'"
+    ID_MESSAGE_POWERON_ERROR "The Device Emulator could not start, possibly because of incorrect startup parameters."
+    ID_MESSAGE_INVALID_ROM_ADDRESS_UNSPECIFIED
+                            "Error: You must specify .nb0 file base address via '/r address' switch."
+    ID_MESSAGE_INVALID_ROM_IMAGE "Error: Invalid or missing ROM image."
+    ID_MESSAGE_INVALID_ROM_ADDRESS
+                            "Error: ROM base address 0x%1!x! is invalid; must point into ROM/RAM."
+    ID_MESSAGE_INVALID_ROM_IMAGE_TYPE "Error: Invalid image file type; must be either .bin or .nb0 file."
+    ID_MESSAGE_INVALID_SAVED_FILE
+                            "Error: File is not a valid emulator saved-state file."
+    ID_MESSAGE_UNSUPPORTED_HARDWARE "Error: The emulation layer does not support the functionality that is being accessed."
+    ID_MESSAGE_ARE_YOU_SURE_RESET "Are you sure you want to reset the guest OS?"
+    ID_MESSAGE_SAVE_STATE   "Do you want to save the emulator state before exiting?"
+    ID_CAPTION_SAVINGSTATE  "Saving State..."
+    ID_CAPTION_LOADING      "Restoring State..."
+    ID_HOSTKEY_NONE "(None)"
+    ID_HOSTKEY_LEFT_ALT "Left-Alt"
+    ID_HOSTKEY_RIGHT_ALT "Right-Alt"
+    ID_DEFAULT_VALUE "<default>"
+END
+
+STRINGTABLE
+BEGIN
+    ID_MESSAGE_INVALID_SAVED_FILE_VERSION
+                            "Error: This saved-state file is from another version of the emulator and is not compatible with the current emulator."
+
+    ID_MESSAGE_INVALID_SAVED_FILE_VERSION_DELETE_OPTION
+                            "Error: The saved-state file (%1!s!) is from another version of the emulator and is not compatible with the current emulator.  Do you want to clear this state?"
+
+    ID_MESSAGE_INVALID_SAVED_FILE_PLATFORM
+                            "Error: This saved state file is from another emulated hardware platform and is not compatible with this emulator."
+    ID_MESSAGE_FAILED_SAVED_FILE_WRITE
+                            "Error: Could not write save-state file."
+    ID_MESSAGE_FAILED_SAVED_FILE_READ "Error: Could not read save-state file."
+    ID_MESSAGE_FAILED_VPC_NETWORK_OPEN
+                            "Failed to open the VPC Network Driver. Verify that the driver is installed, or install the driver from the Web download location at http://go.microsoft.com/fwlink/?linkid=46859"
+    ID_MESSAGE_INVALID_VPC_NETWORK_VERSION
+                            "Error:  VPC Network driver does not have expected version (Actual: %1!x!, Expected: %2!x!)."
+    ID_MESSAGE_INVALID_VPC_NETWORK_FEATURES
+                            "Error: VPC Network driver does not support the required feature set."
+    ID_MESSAGE_FAILED_VPC_NETWORK_ADAPTER
+                            "Error: No VPC network adapters enumerated or no host network adapter with provided MAC address found."
+    ID_MESSAGE_FAILED_CONFIG_UPDATE
+                            "Error: Problem updating configuration. Not all settings have been updated."
+    ID_MESSAGE_USAGE        "Command Line Option Help\n\n\
+binfile - Filename of the binfile to be loaded by the emulator.\n\
+/a - Keeps emulator window always on top.\n\
+/c - Creates and displays a console window to show output from Serial Port 1.\n\
+/defaultsave - Use the VMID as the saved state name and place the saved state file in the per user directory.\n\
+/flash filename - Enables flash-memory emulation and specifies flash-memory storage filename.\n\
+/h - Sets host-only routing for network packets.\n\
+/hostkey keyname - Specifies host key, where keyname can be 'None', 'Left-Alt', or 'Right-Alt'.\n\
+/language LangID - Specifies the UI language, where LangID is a decimal.\n\
+/memsize size - Sets emulated RAM size, where size is in megabytes.\n\
+/nosecurityprompt - Do not prompt when enabling potentially unsafe peripherals when restoring from saved state.\n\
+/n [macaddress] - Enables CS8900 network adapter where optional macaddress specifies which host adapter the card will bind to.\n\
+/p [macaddress] - Enables NE2000 PCMCIA network adapter, where optional macaddress specifies which host adapter the card will bind to.\n\
+/r address - Specifies ROM file base address(in hexadecimal).\n\
+/rotate angle - Rotates the display by degrees, where angle can be 0, 90, 180, or 270.\n\
+/s filename - Specifies the save-state filename.\n\
+/sharedfolder directoryname - Mounts directoryname as a storage card.\n\
+/skin filename - Loads the specified skin file.\n\
+/tooltips state - Enables or disables tooltips, where state is 'ON' or 'OFF'.\n\
+/u0 serialport /u1 serialport /u2 serialport - Maps guest serial ports 0-2 to Windows serial ports.\n\
+/video <width>x<height>x<bit-depth> - Specifies screen size and bit-depth.\n\
+/vmid {GUID} - Specifies the VMID GUID.\n\
+/vmname name - Specifies the window title.\n\
+/z - Zooms the display to 2x normal size.\n\
+"
+
+    sSkinEngineFailedToOpenCOMObjectError
+                            "Failed to open XML parser COM object. %1!s!%2!s!"
+    sSkinEngineInvalidTag   "Error while processing skin file %1!s!:\nInvalid tag found. The tag %4!s! is unsupported. %2!s!%3!s!"
+    sSkinEngineXMLSkinEmptyButton
+                            "Error while processing skin file %1!s!:\nButton element found with no view element. Button elements must be nested inside view elements.%2!s!%3!s!"
+    sSkinEngineXMLSkinOnClickOverflow
+                            "Error while processing skin file %1!s!:\nAttribute: ""onClick"" with value: %s!4! has more than 32 characters. Specify 32 or fewer characters.%2!s!%3!s!"
+    sSkinEngineXMLSkinOnPressAndHoldOverflow
+                            "Error while processing skin file %1!s!:\nAttribute: ""onPressAndHold"" with value %s!4! has more than 32 characters. Specify 32 or fewer characters.%2!s!%3!s!"
+   ID_MESSAGE_UNRECOGNIZED_ARGUMENT
+                            "Unrecognized command line argument: %1!s!\n\n%2!s!"
+   ID_MESSAGE_UNRECOGNIZED_OPTION
+                            "Unrecognized command line option: %1!s!\n\n%2!s!"
+   ID_MESSAGE_UNRECOGNIZED_LANGUAGE
+                            "Unrecognized or malformed language id: %1!s!\n\n%2!s!"
+   ID_MESSAGE_MALFORMED_MAC_ADDRESS
+                            "Malformed host MAC address: %1!s!\n\n%2!s!"
+   ID_MESSAGE_UNRECOGNIZED_HOSTKEY
+                            "Unrecognized hostkey combination: %1!s!\n\n%2!s!"
+   ID_MESSAGE_MALFORMED_ROM_ADDRESS
+                            "Malformed ROM address: %1!s!\n\n%2!s!"
+   ID_MESSAGE_MALFORMED_PROCESSOR_FEATURES
+                            "Unrecognized or malformed processor feature: %1!s!\n\n%2!s!"
+   ID_MESSAGE_MALFORMED_ROTATION
+                            "Unrecognized or malformed rotation parameter: %1!s!. Use 0, 90, 180, or 270.\n\n%2!s!"
+   ID_MESSAGE_UNRECOGNIZED_TOOLTIPS_STATE
+                            "Unrecognized or malformed tooltips state: %1!s!. Use either ON or OFF.\n\n%2!s!"
+   ID_MESSAGE_MISSING_TOOLTIPS_STATE
+                            "Missing tooltips state. Select either ON or OFF.\n\n %2!s!"
+   ID_MESSAGE_MISSING_UART_PORT
+                            "Missing serial device.\n\n%2!s!"
+   ID_MESSAGE_MALFORMED_VIDEO_SPEC
+                            "Malformed video parameter: %1!s!.\n\n%2!s!"
+   ID_MESSAGE_MISSING_VMNAME
+                            "Missing VM name.\n\n%2!s!"
+   ID_MESSAGE_MISSING_VMID
+                            "Missing VMID GUID.\n\n%2!s!"
+   ID_MESSAGE_MISSING_VIDEO
+                            "Missing video display dimensions.\n\n%2!s!"
+   ID_MESSAGE_BOTH_SKIN_AND_VIDEO
+                            "You cannot specify both video and skin.\n\n%2!s!"
+   ID_MESSAGE_MISSING_SKIN_NAME
+                            "Missing skin file name.\n\n%2!s!"
+   ID_MESSAGE_MISSING_SAVESTATE_NAME
+                            "Missing saved-state file name.\n\n%2!s!"
+   ID_MESSAGE_MISSING_PROCESSOR_FEATURES
+                            "Missing processor feature value.\n\n%2!s!"
+   ID_MESSAGE_MISSING_ROTATE
+                            "Missing rotation amount.\n\n%2!s!"
+   ID_MESSAGE_MISSING_ROM_ADDRESS
+                            "Missing ROM address.\n\n%2!s!"
+   ID_MESSAGE_MISSING_HOSTKEY
+                            "Missing hostkey combination.\n\n%2!s!"
+   ID_MESSAGE_MISSING_LANGUAGE
+                            "Missing language ID value.\n\n%2!s!"
+   ID_MESSAGE_MALFORMED_VMID
+                            "Malformed VMID GUID value: %1!s!.\n\n%2!s!"
+   ID_MESSAGE_MISSING_FOLDERSHARE_NAME
+                            "Missing FolderShare file name.\n\n%2!s!"
+   ID_MESSAGE_MALFORMED_MEMORY_SIZE
+                            "Memory size must be a value between 64 and 256.\n\n%2!s!"
+   ID_MESSAGE_MISSING_MEMORY_SIZE
+                            "Missing memory size.\n\n%2!s!"
+   ID_MESSAGE_SKIN_WRONG_SIZE
+                            "This skin does not match the current LCD size. To use this skin, restart the emulator."
+
+END
+
+STRINGTABLE
+BEGIN
+    sSkinEngineXMLSkinOnClickValue
+                            "Error while processing skin file %1!s!:\nAttribute ""onClick"" with value %4!s! is invalid or empty.%2!s!%3!s!"
+    sSkinEngineXMLSkinOnPressAndHoldValue
+                            "Error while processing skin file %1!s!:\nAttribute ""onPressAndHold"" with value: %4!s! is invalid or empty. %2!s!%3!s!"
+    sSkinEngineXMLSkinMappingColorValue
+                            "Error while processing skin file %1!s!:\nAttribute ""mappingColor"" with value %4!s! is invalid or empty.%2!s!%3!s!"
+    sSkinEngineXMLSkinDisplayXPosValue
+                            "Error while processing skin file %1!s!:\nAttribute ""displayPosX"" with value %4!s! is invalid or empty.%2!s!%3!s!"
+    sSkinEngineXMLSkinDisplayYPosValue
+                            "Error while processing skin file %1!s!:\nAttribute ""displayPosY"" with value %4!s! is invalid or empty.%2!s!%3!s!"
+    sSkinEngineXMLSkinDisplayWidthValue
+                            "Error while processing skin file %1!s!:\nAttribute ""displayWidth"" with value %4!s! is invalid or empty. %2!s!%3!s!"
+    sSkinEngineXMLSkinDisplayHeightValue
+                            "Error while processing skin file %1!s!:\nAttribute ""displayHeight"" with value %4!s! is invalid or empty.%2!s!%3!s!"
+    sSkinEngineXMLSkinDisplayDepthValue
+                            "Error while processing skin file %1!s!:\nAttribute ""displayDepth"" with value %4!s! is invalid or empty.%2!s!%3!s!"
+    sSkinEngineXMLSkinInvalidDisplayWidth
+                            "Error while processing skin file %1!s!:\nThe display width must be specified as a positive number divisible by 2 between 64 and 800.%2!s!%3!s!"
+    sSkinEngineXMLSkinInvalidDisplayHeight
+                            "Error while processing skin file %1!s!:\nThe display height must be specified as a positive number divisible by 2 between 64 and 800.%2!s!%3!s!"
+    sSkinEngineXMLSkinInvalidDisplayDepth
+                            "Error while processing skin file %1!s!:\nInvalid display depth; must be 16, 24, or 32.%2!s!%3!s!"
+    sSkinEngineXMLSkinMultipleViews
+                            "Error while processing skin file %1!s!:\nMultiple view elements found. Only one view element is allowed per skin.%2!s!%3!s!"
+    sSkinEngineXMLSkinNoView
+                            "Error while processing skin file %1!s!:\nView element is either missing or invalid.%2!s!%3!s!"
+    sSkinEngineXMLFileNotAccessible
+                            "Error while processing skin file %1!s!:\nSkin file ""%4!s!"" is not accessible or does not exist.%2!s!%3!s!"
+    sSkinEngineXMLSkinInvalidOrEmptyNormalImage
+                            "Error while processing skin file %1!s!:\nA valid default normal image must be supplied within the view element. Specify a .bmp or .png file to display.%2!s!%3!s!"
+END
+
+STRINGTABLE
+BEGIN
+    sSkinEngineLineLabel    "Line:"
+
+    ID_FOLDER_SHARE_PATH_INVALID
+                            "The folder sharing path is not valid."
+    ID_FOLDER_SHARE_PATH_EMPTY
+                "The folder sharing path cannot be empty."
+    ID_FOLDER_SHARE_PATH_NOT_FOUND
+                "The folder sharing path '%1!s!' is not found or is not a directory."
+    ID_MESSAGE_DELAY_LOAD_ERROR
+                    "The delay loading of %1!s! or this DLL was missing an ordinal. Execution cannot continue."
+    ID_MESSAGE_FAILED_SAVE_FLASH
+                            "Failed to save image of the NAND flash at '%1!s!'. Verify the file path exists and is not marked read-only."
+    ID_LEGAL_NOTICE
+                "Warning: This computer program is protected by copyright law and international treaties. Unauthorized reproduction or distribution of this program, or any portion of it, may result in severe civil and criminal penalties, and will be prosecuted to the maximum extent possible under the law."
+    ID_VERSION_STRING
+                VER_PRODUCTVERSION_STR
+    ID_COPYRIGHT_STRING
+		VER_LEGALCOPYRIGHT_STR
+    ID_COPYRIGHT_YEARS
+                VER_LEGALCOPYRIGHT_YEARS
+    ID_MESSAGE_SUCCESS_SAVE_FLASH
+                "Successfully saved image of the NAND flash to '%1!s!'"
+    ID_MESSAGE_INVALID_SCREENDEPTH
+                "Screen depth must be either 16, 24, or 32. You selected %1!s!.\n\n%2!s!"
+    ID_MESSAGE_EXCEEDED_SCREENBUFFER
+                "The screen buffer is limited to 1MB. Reduce either screen size or depth.\n\n%2!s!"
+    ID_MESSAGE_MUST_SPECIFY_BIN_SAVESTATE
+                "Specify either a .bin file containing an OS image or an emulator saved-state file."
+    ID_MESSAGE_BOTH_SAVESTATE_DEFAULT
+                "You cannot specify both //defaultsave and a saved-state name."
+    ID_MESSAGE_HELP_NOT_FOUND
+                "Help file not found."
+    ID_MESSAGE_ENABLE_FOLDERSHARING
+                "Do you want to allow folder sharing for directory %1!s!? This will allow code running inside the emulator to have access to this directory."
+    ID_MESSAGE_ENABLE_NETWORKING
+                "Do you want to enable emulation of %1!s! network card? This will allow code running inside the emulator to have access to this network."
+    ID_MESSAGE_ENABLE_SERIAL
+                "Do you want to enable emulation of serial port %1!d!? This will allow code running inside the emulator to have access to the resource connected to port %2!s!."
+END
+
+#include "../satellite/config.rc"
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

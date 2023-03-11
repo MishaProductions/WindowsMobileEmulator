@@ -1,0 +1,10 @@
+[Registry_Root]="Software\Microsoft\VisualStudio\8.0"
+REGROOTBEGIN=*[Registry_Root]
+REGROOTEND=[Registry_Root]*
+CLSID_CEmulatorVirtualTransport="{8703b814-b436-4d99-b126-ce5df302730f}"
+CLSID_CEmulatorVirtualMachineManager="063e2de8-aa5b-46e8-8239-b8f7ca43f4c7}"
+MODULE=[#FilePath]
+EMULATORDIR=[Device_Emulator_10.3643236F_FC70_11D3_A536_0090278A1BB8]
+EMU_EXE_NAME="DeviceEmulator.exe"
+PROGID_APPIDNAME="DeviceEmulator"
+PROGID_VERSION="1.0"
