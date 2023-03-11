@@ -26,7 +26,6 @@
 #include "iphlpapi.h"
 #include "board.h"
 #include "wincontroller.h"
-
 #pragma warning (disable:4995) // name was marked as #pragma deprecated
 #include <algorithm>
 // #include <functional>

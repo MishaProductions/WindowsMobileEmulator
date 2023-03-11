@@ -189,7 +189,7 @@ bool GetCachedMACAddress(USHORT *GuestMACAddress, const wchar_t* DeviceName)
         LOG_ERROR(NETWORK, "Failed to generate registry key");
         return false;
     }
-    l = RegOpenKey(HKEY_CURRENT_USER, EMULATOR_REGPATH MAC_CACHE_NAME, &hKeyCache);
+    l = RegOpenKey(HKEY_CURRENT_USER, TEXT("Software\\Microsoft\\Device Emulator\\MAC Addresses"), &hKeyCache);
     if (l != ERROR_SUCCESS) {
         LOG_ERROR(NETWORK, "Failed to get the emulator registry node with %d", l);
         return false;
@@ -227,7 +227,7 @@ void SetCachedMACAddress(const USHORT *GuestMACAddress, const wchar_t* DeviceNam
         LOG_ERROR(NETWORK, "Failed to generate registry key");
         return;
     }
-    l = RegCreateKeyEx(HKEY_CURRENT_USER, EMULATOR_REGPATH MAC_CACHE_NAME, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKeyCache, &dwDisposition);
+    l = RegCreateKeyEx(HKEY_CURRENT_USER, TEXT("Software\\Microsoft\\Device Emulator\\MAC Addresses"), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKeyCache, &dwDisposition);
     if (l != ERROR_SUCCESS) {
         LOG_ERROR(NETWORK, "Failed to get the emulator registry node with %d", l);
         return;
@@ -911,7 +911,7 @@ RetryRegisterGuest:
         return false;
     }
 
-    Callback.lpRoutine = CompletionRoutineStatic;
+    Callback.lpRoutine = (COMPLETIONPORT_ROUTINE)CompletionRoutineStatic;
     Callback.lpParameter = this;
     if (!CompletionPort.AssociateHandleWithCompletionPort(hVirtualAdapter, &Callback)) {
         LOG_ERROR(NETWORK, "Failed to associate the VPCNET handle with the IO completion port");

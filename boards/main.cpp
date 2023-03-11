@@ -20,7 +20,9 @@
 #include <ShellAPI.h> // for CommandLineToArgvW()
 #include "Htmlhelp.h" // for HelpHtml()
 #include "resource.h"
-
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 // Include the logging infrastructure
 #include "dev_emulator_log.h"
 #define TMH_FILENAME "main.tmh"
@@ -39,7 +41,7 @@
 #include <delayimp.h>
 FARPROC WINAPI delayLoadFailureHook(unsigned dliNotify, PDelayLoadInfo pdli);
 // Delay loading hook
-PfnDliHook __pfnDliFailureHook2 = delayLoadFailureHook;
+//PfnDliHook __pfnDliFailureHook2 = delayLoadFailureHook;
 
 /*
     These two defines allow two emulator processes to run side-by-side, with one confirming that its behavior is

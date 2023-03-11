@@ -82,17 +82,6 @@ typedef struct {
     UINT16  bspVersion;
 } OAL_ARGS_HEADER;
 
-//------------------------------------------------------------------------------
-
-//---Copied from CE's public\common\oak\inc\pkfuncs.h ----------------------------------------------
-typedef struct _DEVICE_LOCATION {
-    DWORD IfcType;                  // One of the INTERFACE_TYPE enum, typically PCIBus
-    DWORD BusNumber;                // Bus number, typically the PCI bus number the device resides on
-    DWORD LogicalLoc;               // Defines logical location of device.  See above for PCIbus example. 
-    PVOID PhysicalLoc;              // Reserved for future use
-    DWORD Pin;                      // PCIbus IRQ pin
-} DEVICE_LOCATION, *PDEVICE_LOCATION;
-//------------------------------------------------------------------------------
 
 //---Copied from CE's platform\common\src\inc\oal_kitl.h----------------------------------------------
 #pragma warning (push)

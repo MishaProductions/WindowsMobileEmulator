@@ -33,8 +33,8 @@ using namespace std;
 TokenListItem	keyWStringsToCodes[] =
 {
 	// Special codes
-	{L"DOWN",					fKeyDown},
-	{L"UP",						fKeyUp},
+	{L"DOWN",					(int)fKeyDown},
+	{L"UP",						(int)fKeyUp},
 	
 	{L"SHUTDOWN",				0x00010000},
 	

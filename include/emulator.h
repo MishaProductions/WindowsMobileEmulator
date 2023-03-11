@@ -16,7 +16,7 @@
 
 #include "heap.h"
 
-#define _WIN32_WINNT 0x0400 // Require NT4 or later
+//#define _WIN32_WINNT 0x0400 // Require NT4 or later
 //#define WIN32_LEAN_AND_MEAN
 
 #include <winsock2.h>

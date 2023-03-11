@@ -16,32 +16,4 @@
 
 #include <stdlib.h>
 
-inline void *  __CRTDECL  operator new( size_t cb )
-{
-    void *res;
-
-    res = malloc(cb);
-
-    return res;
-}
-
-inline void *  __CRTDECL  operator new[]( size_t cb )
-{
-    void *res;
-
-    res = malloc(cb);
-
-    return res;
-}
-
-inline void  __CRTDECL operator delete( void * p )
-{
-    free(p);
-}
-
-inline void  __CRTDECL operator delete[]( void * p )
-{
-    free(p);
-}
-
 #endif // __HEAP_H 

@@ -88,8 +88,14 @@ STDAPI SHGetUIObjectFromFullPIDL(LPCITEMIDLIST pidl, HWND hwnd, REFIID riid, voi
     return hr;
 }
 
+#ifndef ILSkip
 #define ILSkip(pidl, cb)       ((LPITEMIDLIST)(((BYTE*)(pidl))+cb))
+#endif
+
+#ifndef ILNext
 #define ILNext(pidl)           ILSkip(pidl, (pidl)->mkid.cb)
+#endif // !ILNext
+
 
 HRESULT SHILClone(LPCITEMIDLIST pidl, LPITEMIDLIST *ppidl)
 {

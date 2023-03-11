@@ -1,0 +1,19 @@
+# visual studio nonsense
+.vs/
+*.user
+satelite/Debug/
+satelite/Release/
+
+include/Debug/
+include/Release/
+
+features/skins/Debug/
+features/skins/Releases/
+
+features/Debug/
+features/Releases/
+
+features/ui/config/Debug/
+features/ui/config/Releases/
+
+debug/
